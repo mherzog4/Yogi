@@ -1,6 +1,12 @@
 import { parseArgs } from "node:util";
 import { createCampaignPrompt, type CampaignBrief } from "./campaign.js";
 import { initWorkspace } from "./config.js";
+import type { OutboundBatchMode } from "./outbound/model.js";
+import {
+  addSuppression,
+  importProspects,
+  planOutboundBatch,
+} from "./outbound/store.js";
 import { GTM_PLAYBOOKS, type GtmChannel } from "./playbooks.js";
 import {
   createCampaign,
@@ -21,6 +27,10 @@ Usage:
     [--constraint <constraint>...]
   yogi campaign status [campaign-id] [--json]
   yogi campaign prompt <campaign-id> <stage>
+  yogi outbound import <campaign-id> <csv-path> [--replace]
+  yogi outbound suppress <campaign-id> <email-or-domain>
+    --type <email|domain> --reason <reason>
+  yogi outbound plan <campaign-id> [--mode <draft|send>] [--approved]
 `;
 
 export interface CliContext {
@@ -174,6 +184,102 @@ const campaignCommand = async (
   throw new CliError(`Unknown campaign command: ${subcommand ?? "(missing)"}`);
 };
 
+const outboundCommand = async (
+  args: readonly string[],
+  context: CliContext,
+): Promise<void> => {
+  const [subcommand, ...rest] = args;
+
+  if (subcommand === "import") {
+    const [campaignId, csvPath, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        replace: { type: "boolean", default: false },
+      },
+      strict: true,
+    });
+    const report = await importProspects({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      csvPath: requireValue(csvPath, "A CSV path is required"),
+      replace: parsed.values.replace,
+    });
+    context.stdout(
+      `Imported ${report.accepted} prospects; rejected ${report.rejected}`,
+    );
+    if (report.rejected > 0) {
+      context.stdout(`Rejections: ${JSON.stringify(report.rejectionReasons)}`);
+    }
+    context.stdout(
+      "Contact-level data was stored under ignored .yogi/private/.",
+    );
+    context.stdout(
+      "The source CSV was not moved; keep it outside Git or under .yogi/imports/.",
+    );
+    return;
+  }
+
+  if (subcommand === "suppress") {
+    const [campaignId, value, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        type: { type: "string" },
+        reason: { type: "string" },
+      },
+      strict: true,
+    });
+    const type = parsed.values.type;
+    if (type !== "email" && type !== "domain") {
+      throw new CliError("--type must be email or domain");
+    }
+    const suppression = await addSuppression({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      value: requireValue(value, "A suppression value is required"),
+      type,
+      reason: requireValue(parsed.values.reason, "--reason is required"),
+    });
+    context.stdout(`Suppressed ${suppression.type} ${suppression.value}`);
+    return;
+  }
+
+  if (subcommand === "plan") {
+    const [campaignId, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        mode: { type: "string", default: "draft" },
+        approved: { type: "boolean", default: false },
+      },
+      strict: true,
+    });
+    const mode = parsed.values.mode;
+    if (mode !== "draft" && mode !== "send") {
+      throw new CliError("--mode must be draft or send");
+    }
+    const { summary } = await planOutboundBatch({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      mode: mode as OutboundBatchMode,
+      approved: parsed.values.approved,
+    });
+    context.stdout(
+      `${summary.mode} batch ${summary.batchId}: ${summary.selected} selected, ${summary.excluded} excluded`,
+    );
+    if (summary.excluded > 0) {
+      context.stdout(`Exclusions: ${JSON.stringify(summary.exclusionReasons)}`);
+    }
+    context.stdout(
+      "No email was sent; the private batch is ready for the future provider adapter.",
+    );
+    return;
+  }
+
+  throw new CliError(`Unknown outbound command: ${subcommand ?? "(missing)"}`);
+};
+
 export const runCli = async (
   args: readonly string[],
   overrides: Partial<CliContext> = {},
@@ -219,6 +325,11 @@ export const runCli = async (
 
     if (command === "campaign") {
       await campaignCommand(rest, context);
+      return 0;
+    }
+
+    if (command === "outbound") {
+      await outboundCommand(rest, context);
       return 0;
     }
 

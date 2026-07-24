@@ -23,6 +23,12 @@ export const validConfigSource = `export default {
       avoid: ["hype", "unsupported claims"],
     },
   },
+  outbound: {
+    dailyProspectLimit: 20,
+    maxPerDomain: 2,
+    requirePersonalization: true,
+    allowRoleBasedAddresses: false,
+  },
 };
 `;
 

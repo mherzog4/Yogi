@@ -23,10 +23,44 @@ export type {
   InitWorkspaceOptions,
   InitWorkspaceResult,
   LoadConfigOptions,
+  OutboundDefaults,
   ProofPoint,
   VoiceGuide,
   YogiConfig,
 } from "./config.js";
+export {
+  buildOutboundBatch,
+  DEFAULT_OUTBOUND_POLICY,
+  resolveOutboundPolicy,
+} from "./outbound/model.js";
+export type {
+  BuildOutboundBatchOptions,
+  ExcludedProspect,
+  ExclusionReason,
+  OutboundBatch,
+  OutboundBatchMode,
+  OutboundPolicy,
+  Prospect,
+  ProspectStatus,
+  Suppression,
+} from "./outbound/model.js";
+export { parseProspectsCsv } from "./outbound/csv.js";
+export type {
+  ProspectImportRejection,
+  ProspectImportResult,
+} from "./outbound/csv.js";
+export {
+  addSuppression,
+  importProspects,
+  planOutboundBatch,
+} from "./outbound/store.js";
+export type {
+  AddSuppressionOptions,
+  ImportProspectsOptions,
+  OutboundBatchSummary,
+  PlanOutboundBatchOptions,
+  ProspectImportReport,
+} from "./outbound/store.js";
 export {
   createCampaign,
   formatCampaignStatus,
