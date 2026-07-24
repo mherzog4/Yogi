@@ -7,6 +7,8 @@ reviewable engineering workflow.
 
 ### 1. Orchestration foundation
 
+Status: implemented in draft PR #1.
+
 - exe.dev isolated sandbox provider
 - typed campaign briefs and playbooks
 - prompt generation CLI
@@ -14,6 +16,8 @@ reviewable engineering workflow.
 - tests, packaging, and architecture documentation
 
 ### 2. Campaign workspace
+
+Status: implemented on the stacked campaign-workspace branch.
 
 - `yogi init` project scaffolding
 - validated `yogi.config.ts`

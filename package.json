@@ -20,6 +20,7 @@
   },
   "files": [
     "dist",
+    "examples",
     "README.md",
     "LICENSE"
   ],
@@ -48,7 +49,8 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@ai-hero/sandcastle": "^0.12.0"
+    "@ai-hero/sandcastle": "^0.12.0",
+    "jiti": "^2.7.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

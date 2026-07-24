@@ -25,6 +25,12 @@ without carrying a fork of the full engine.
 - `src/playbooks.ts` defines channels and their ordered stages.
 - `src/campaign.ts` turns a campaign brief and stage into an agent prompt and
   enforces the external-action approval gate.
+- `src/config.ts` loads and validates the shared TypeScript workspace config.
+- `src/workspace.ts` owns durable campaign records and stage status.
+- `src/workspace-run.ts` wraps agent runs with run manifests and artifact
+  provenance.
+- `src/commands.ts` implements testable CLI commands independently of process
+  exit behavior.
 - `src/sandboxes/exe.ts` adapts exe.dev's SSH API to Sandcastle's isolated
   sandbox contract.
 - `src/process.ts` is the process boundary used by the provider and replaced by
@@ -37,6 +43,10 @@ Agents write durable outputs under:
 
 ```text
 campaigns/<campaign-slug>/
+  campaign.json
+  <stage-deliverables>
+  runs/
+    <run-id>.json
 ```
 
 The repository is the system of record for prepared GTM work. External
@@ -44,12 +54,35 @@ providers remain the system of execution for sends, publishing, and ad spend.
 Execution stages should record external identifiers and changes back into the
 campaign directory.
 
+Each completed run captures SHA-256, byte size, capture time, and Git source ref
+for every required stage deliverable. Provenance reads from Sandcastle's
+returned branch first, then falls back to the current filesystem for embedded
+runners. Missing deliverables fail the run even when the underlying agent
+process exits successfully.
+
+## Workspace configuration
+
+`yogi.config.ts` is loaded through Jiti so users get a typed ESM configuration
+without a project-specific compilation step. Runtime validation aggregates
+configuration issues before any campaign work starts.
+
+The shared config holds durable product context:
+
+- description and positioning;
+- audiences and offers;
+- proof claims with optional sources;
+- desired and avoided voice traits.
+
+Campaign creation copies the selected context into `campaign.json`. This keeps
+an individual campaign reproducible even when the global positioning evolves
+later.
+
 ## Approval boundary
 
 Stages have one of four kinds: `research`, `create`, `review`, or `execute`.
-Built-in `execute` stages are approval-required. `runGtmStage()` fails before
-creating a sandbox if an approval-required stage does not receive
-`approved: true`.
+Built-in `execute` stages are approval-required. `runGtmStage()` and
+`runWorkspaceStage()` fail before creating a sandbox or run record if an
+approval-required stage does not receive `approved: true`.
 
 Future integrations should preserve two layers:
 
