@@ -27,6 +27,10 @@ Status: implemented on the stacked campaign-workspace branch.
 
 ### 3. Outbound email
 
+Status: provider-neutral import, suppression, safety policy, and dry-run batches
+implemented on the outbound-core branch. Sending adapter blocked on human
+review issue #3.
+
 - ICP and account-import schemas
 - enrichment adapters with source tracking
 - personalization and sequence QA

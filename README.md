@@ -109,6 +109,24 @@ Each workspace run records its agent, sandbox, timestamps, branch, commits, and
 SHA-256 hashes for required deliverables. A run is marked failed when the agent
 does not produce every required artifact.
 
+## Outbound email
+
+Yogi can import and validate prospect CSVs, manage email/domain suppressions,
+and prepare deterministic draft or send-ready batches:
+
+```bash
+yogi outbound import founder-led-launch .yogi/imports/prospects.csv
+yogi outbound suppress founder-led-launch customer.example \
+  --type domain \
+  --reason "Existing customer"
+yogi outbound plan founder-led-launch
+```
+
+Contact-level data stays under ignored `.yogi/private/`; versioned campaign
+artifacts contain only aggregate counts, reason codes, source hashes, and the
+policy used. Send-ready batches require `--approved`, but Yogi does not yet
+send email. See [docs/OUTBOUND.md](docs/OUTBOUND.md).
+
 ## Built-in playbooks
 
 | Channel        | Stages                                                                           |

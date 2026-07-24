@@ -14,6 +14,13 @@ export interface VoiceGuide {
   readonly avoid: readonly string[];
 }
 
+export interface OutboundDefaults {
+  readonly dailyProspectLimit: number;
+  readonly maxPerDomain: number;
+  readonly requirePersonalization: boolean;
+  readonly allowRoleBasedAddresses: boolean;
+}
+
 export interface YogiConfig {
   readonly schemaVersion: 1;
   readonly workspace: {
@@ -28,6 +35,7 @@ export interface YogiConfig {
     readonly proof: readonly ProofPoint[];
     readonly voice: VoiceGuide;
   };
+  readonly outbound?: OutboundDefaults;
 }
 
 export class ConfigValidationError extends Error {
@@ -145,6 +153,28 @@ export const validateYogiConfig = (input: unknown): YogiConfig => {
     }
   }
 
+  const outbound = input.outbound;
+  if (outbound !== undefined) {
+    if (!isRecord(outbound)) {
+      issues.push("outbound must be an object");
+    } else {
+      for (const key of ["dailyProspectLimit", "maxPerDomain"] as const) {
+        const value = outbound[key];
+        if (!Number.isSafeInteger(value) || Number(value) <= 0) {
+          issues.push(`outbound.${key} must be a positive integer`);
+        }
+      }
+      for (const key of [
+        "requirePersonalization",
+        "allowRoleBasedAddresses",
+      ] as const) {
+        if (typeof outbound[key] !== "boolean") {
+          issues.push(`outbound.${key} must be a boolean`);
+        }
+      }
+    }
+  }
+
   if (issues.length > 0) throw new ConfigValidationError(issues);
   return input as unknown as YogiConfig;
 };
@@ -197,6 +227,12 @@ export default {
       traits: ["clear", "specific", "credible", "human"],
       avoid: ["hype", "unsupported claims", "generic AI phrasing"],
     },
+  },
+  outbound: {
+    dailyProspectLimit: 20,
+    maxPerDomain: 2,
+    requirePersonalization: true,
+    allowRoleBasedAddresses: false,
   },
 } satisfies YogiConfig;
 `;

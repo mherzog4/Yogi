@@ -75,6 +75,12 @@ describe("Yogi configuration", () => {
           proof: [{ claim: "" }],
           voice: { traits: [], avoid: "hype" },
         },
+        outbound: {
+          dailyProspectLimit: 0,
+          maxPerDomain: 1.5,
+          requirePersonalization: "yes",
+          allowRoleBasedAddresses: false,
+        },
       }),
     ).toThrow(ConfigValidationError);
 
@@ -91,6 +97,12 @@ describe("Yogi configuration", () => {
           proof: [{ claim: "" }],
           voice: { traits: [], avoid: "hype" },
         },
+        outbound: {
+          dailyProspectLimit: 0,
+          maxPerDomain: 1.5,
+          requirePersonalization: "yes",
+          allowRoleBasedAddresses: false,
+        },
       });
     } catch (error) {
       expect(error).toBeInstanceOf(ConfigValidationError);
@@ -100,6 +112,9 @@ describe("Yogi configuration", () => {
           "workspace.name must be a non-empty string",
           "product.audiences must include at least one value",
           "product.voice.avoid must be an array of strings",
+          "outbound.dailyProspectLimit must be a positive integer",
+          "outbound.maxPerDomain must be a positive integer",
+          "outbound.requirePersonalization must be a boolean",
         ]),
       );
     }

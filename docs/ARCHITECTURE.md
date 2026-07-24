@@ -31,6 +31,11 @@ without carrying a fork of the full engine.
   provenance.
 - `src/commands.ts` implements testable CLI commands independently of process
   exit behavior.
+- `src/outbound/csv.ts` validates and normalizes provider-neutral prospect
+  imports.
+- `src/outbound/model.ts` applies deterministic suppression and batch policy.
+- `src/outbound/store.ts` separates private contact records from versioned
+  aggregate reports.
 - `src/sandboxes/exe.ts` adapts exe.dev's SSH API to Sandcastle's isolated
   sandbox contract.
 - `src/process.ts` is the process boundary used by the provider and replaced by
@@ -104,3 +109,17 @@ The provider uses exe.dev's documented SSH interface:
 
 Environment values are not passed in VM-creation arguments. Yogi relies on the
 user's SSH configuration for exe.dev authentication.
+
+## Outbound privacy boundary
+
+Prospect emails, personalization, suppressions, and full batches live under
+ignored `.yogi/private/`. The versioned campaign tree receives only aggregate
+reports, policy snapshots, rejection/exclusion reason counts, and SHA-256
+source hashes.
+
+Suppressions are workspace-global rather than campaign-scoped so an unsubscribe
+or protected domain cannot re-enter through a different campaign.
+
+Draft and send-ready are planning modes, not transport operations. A send-ready
+batch requires explicit approval, while actual sending remains unavailable
+until an adapter and mailbox policy are selected.

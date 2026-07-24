@@ -23,4 +23,10 @@ export default {
       avoid: ["hype", "unsupported claims", "generic AI phrasing"],
     },
   },
+  outbound: {
+    dailyProspectLimit: 20,
+    maxPerDomain: 2,
+    requirePersonalization: true,
+    allowRoleBasedAddresses: false,
+  },
 } satisfies YogiConfig;

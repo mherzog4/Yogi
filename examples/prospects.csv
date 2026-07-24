@@ -1,0 +1,3 @@
+email,first_name,last_name,company,role,source,source_url,personalization,status
+alex@example.test,Alex,Founder,Example Co,Founder,Conference notes,https://example.test/source,"Your launch post emphasized narrow positioning.",prospect
+sam@sample.test,Sam,Builder,Sample Labs,CEO,Customer research,https://sample.test/source,"Your team is preparing a new product category.",prospect
