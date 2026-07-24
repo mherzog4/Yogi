@@ -134,6 +134,7 @@ The schema stores:
 - operation-bound, optionally expiring approvals;
 - polling cursors;
 - deduplicated webhook receipts;
+- normalized, deduplicated outbound delivery and engagement events;
 - normalized daily ad metrics.
 
 Provider responses written to the operation ledger must be sanitized. Tokens,
@@ -155,8 +156,27 @@ External mutations use a prepare/approve/execute lifecycle:
    of repeating the provider mutation.
 
 If a provider call returns but its result cannot be safely recorded, the
-operation becomes `unknown`. Yogi blocks automatic retry until synchronization
-reconciles the external outcome.
+operation becomes `unknown`. Yogi blocks automatic retry until an operator
+checks the provider and reconciles the external outcome:
+
+```bash
+yogi integrations operations --status unknown
+
+yogi integrations reconcile <connection-id> <idempotency-key> \
+  --status succeeded \
+  --reviewed-by "Matthew" \
+  --note "Confirmed one paused campaign in the provider UI" \
+  --external-id <provider-campaign-id> \
+  --response-file .yogi/private/reconciliation-response.json
+
+yogi integrations reconciliations
+```
+
+Only sanitized JSON up to 64 KiB is accepted as evidence. Credential-like
+fields are rejected. Successful campaign-creation reconciliation requires the
+sanitized response so replay can restore the provider mapping. Reconciliation
+is one-time and creates an immutable audit row with the reviewer, note, and
+response SHA-256.
 
 Outbound publishing uses two independently recorded operations: remote draft
 creation and prospect upload. Activation uses a third operation with its own
@@ -168,6 +188,11 @@ The draft hash binds the experiment, creative SHA-256, readiness policy,
 account, and budgets while ignoring the review timestamp. Each paid experiment
 gets an independent provider mapping even when several experiments belong to
 one Yogi campaign.
+
+Polling uses at-least-once delivery. Yogi stores normalized outbound events or
+daily metrics before advancing the stream cursor. Provider event IDs and daily
+metric keys make a replay idempotent, so an interrupted run may repeat work but
+cannot silently skip already fetched results.
 
 ## Deployment modes
 

@@ -259,10 +259,11 @@ export class PaidAdsIntegrationWorkflow {
     readonly connectionId: string;
     readonly campaignId: string;
     readonly experimentId: string;
-    readonly since: string;
+    readonly since?: string;
   }): Promise<{
     readonly metrics: readonly NormalizedAdsMetrics[];
     readonly autoPaused: boolean;
+    readonly cursor: string;
   }> {
     const mapping = this.#database.getCampaignMapping(
       options.connectionId,
@@ -273,10 +274,24 @@ export class PaidAdsIntegrationWorkflow {
     if (!isAdsAdapter(adapter)) {
       throw new Error(`${context.connection.provider} is not an ads provider`);
     }
+    const stream = `ads:${mapping.externalCampaignId}:metrics`;
+    const storedCursor = this.#database.getSyncCursor(
+      options.connectionId,
+      stream,
+    );
+    const since = options.since ?? storedCursor;
+    if (!since) {
+      throw new Error(
+        "The first paid-metrics sync requires an explicit YYYY-MM-DD start date",
+      );
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+      throw new Error("Paid-metrics sync start must use YYYY-MM-DD");
+    }
     const metrics = await adapter.syncMetrics(
       context,
       mapping.externalCampaignId,
-      options.since,
+      since,
     );
     const currency = this.#metadataNumberOrString(mapping.metadata, "currency");
     for (const row of metrics) {
@@ -303,7 +318,7 @@ export class PaidAdsIntegrationWorkflow {
           action: "ads:auto-pause",
           idempotencyKey: `${options.campaignId}:${options.experimentId}:ads-auto-pause:${mapping.externalCampaignId}:${sha256Json(
             {
-              since: options.since,
+              since,
               reason: error instanceof Error ? error.message : String(error),
             },
           ).slice(0, 12)}`,
@@ -336,7 +351,16 @@ export class PaidAdsIntegrationWorkflow {
         autoPaused = true;
       }
     }
-    return { metrics, autoPaused };
+    const cursor = metrics.reduce(
+      (latest, row) => (row.date > latest ? row.date : latest),
+      since,
+    );
+    this.#database.setSyncCursor({
+      connectionId: options.connectionId,
+      stream,
+      cursor,
+    });
+    return { metrics, autoPaused, cursor };
   }
 
   #assertWithinSpendLimits(

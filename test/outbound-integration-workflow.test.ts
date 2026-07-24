@@ -65,6 +65,10 @@ const setup = async () => {
     name: "Instantly",
     secretRef: "env:INSTANTLY_API_KEY",
   });
+  database.updateConnectionStatus({
+    id: "connection-1",
+    status: "verified",
+  });
   const adapter: OutboundProviderAdapter = {
     descriptor: {
       id: "instantly",
@@ -167,6 +171,55 @@ describe("outbound integration workflow", () => {
       }),
     ).rejects.toThrow("send-ready outbound batch");
     expect(adapter.createDraft).not.toHaveBeenCalled();
+    database.close();
+  });
+
+  it("stores provider events before advancing its idempotent sync cursor", async () => {
+    const { database, adapter, workflow } = await setup();
+    await workflow.publishDraft({
+      connectionId: "connection-1",
+      input: input(),
+      approvedBy: "owner",
+    });
+    const event = {
+      externalCampaignId: "remote-1",
+      providerEventId: "event-1",
+      type: "replied" as const,
+      occurredAt: "2026-07-24T14:00:00.000Z",
+      prospectEmailHash: "b".repeat(64),
+    };
+    vi.mocked(adapter.syncEvents)
+      .mockResolvedValueOnce({ events: [event], nextCursor: "cursor-1" })
+      .mockResolvedValueOnce({ events: [event], nextCursor: "cursor-2" });
+
+    await expect(
+      workflow.syncEvents({
+        connectionId: "connection-1",
+        campaignId: "founder-launch",
+      }),
+    ).resolves.toMatchObject({
+      received: 1,
+      inserted: 1,
+      nextCursor: "cursor-1",
+    });
+    await expect(
+      workflow.syncEvents({
+        connectionId: "connection-1",
+        campaignId: "founder-launch",
+      }),
+    ).resolves.toMatchObject({
+      received: 1,
+      inserted: 0,
+      nextCursor: "cursor-2",
+    });
+    expect(adapter.syncEvents).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "remote-1",
+      "cursor-1",
+    );
+    expect(
+      database.listOutboundEvents("connection-1", "remote-1"),
+    ).toHaveLength(1);
     database.close();
   });
 });

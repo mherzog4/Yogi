@@ -30,13 +30,13 @@ Status: merged in PR #2.
 Status: provider-neutral import, suppression, safety policy, and dry-run batches
 merged in PR #4. Smartlead, Instantly, and EmailBison adapters now support
 paused draft publishing, sender discovery, prospect upload, explicit
-activation, pausing, and polling.
+activation, pausing, normalized event storage, and cursor-safe polling.
 
 - ICP and account-import schemas
 - enrichment adapters with source tracking
 - personalization and sequence QA
 - suppression lists, volume caps, and dry runs
-- provider webhooks and reconciliation reporting
+- provider webhook receivers
 
 ### 4. Content engine
 
@@ -66,8 +66,9 @@ in human review issue #7.
 ### 6. Operations
 
 Status: private SQLite ledger, connection registry, secret references,
-idempotent operation records, approvals, webhook deduplication, sync cursors,
-metrics, and online backups implemented on the integration-core branch.
+idempotent operation records, approvals, unknown-outcome reconciliation,
+webhook deduplication, normalized outbound events, cursor-safe metric polling,
+and online backups implemented.
 
 - scheduled exe.dev runs
 - notifications and human approval handoffs

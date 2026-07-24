@@ -266,4 +266,61 @@ export class OutboundIntegrationWorkflow {
       metadata: mapping.metadata,
     });
   }
+
+  async syncEvents(options: {
+    readonly connectionId: string;
+    readonly campaignId: string;
+  }): Promise<{
+    readonly received: number;
+    readonly inserted: number;
+    readonly nextCursor?: string;
+  }> {
+    const mapping = this.#database.getCampaignMapping(
+      options.connectionId,
+      options.campaignId,
+    );
+    const context = await this.#service.providerContext(options.connectionId);
+    if (context.connection.status !== "verified") {
+      throw new Error(
+        `Outbound connection ${options.connectionId} must be verified before synchronization`,
+      );
+    }
+    const adapter = this.#registry.get(context.connection.provider);
+    if (!isOutboundAdapter(adapter)) {
+      throw new Error(
+        `${context.connection.provider} is not an outbound provider`,
+      );
+    }
+    const stream = `outbound:${mapping.externalCampaignId}:events`;
+    const cursor = this.#database.getSyncCursor(options.connectionId, stream);
+    const result = await adapter.syncEvents(
+      context,
+      mapping.externalCampaignId,
+      cursor,
+    );
+    if (
+      result.events.some(
+        (event) => event.externalCampaignId !== mapping.externalCampaignId,
+      )
+    ) {
+      throw new Error("Provider returned an event for another campaign");
+    }
+    const inserted = this.#database.storeOutboundEvents({
+      connectionId: options.connectionId,
+      campaignId: options.campaignId,
+      events: result.events,
+    });
+    if (result.nextCursor) {
+      this.#database.setSyncCursor({
+        connectionId: options.connectionId,
+        stream,
+        cursor: result.nextCursor,
+      });
+    }
+    return {
+      received: result.events.length,
+      inserted,
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+    };
+  }
 }
