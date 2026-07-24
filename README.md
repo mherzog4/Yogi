@@ -164,6 +164,40 @@ review checks source coverage, format length, the exact call to action,
 placeholders, and configured prohibited phrases. Yogi does not publish content.
 See [docs/CONTENT.md](docs/CONTENT.md).
 
+## Paid acquisition
+
+Yogi can prepare paid experiments without touching an ad account:
+
+```bash
+yogi campaign create paid-ads \
+  --name "Search intent test" \
+  --goal "Generate qualified launch-plan signups"
+
+yogi ads experiment create search-intent-test \
+  --name "Founder planning intent" \
+  --objective "Generate qualified signups" \
+  --hypothesis "Specific planning language attracts higher-intent founders" \
+  --channel search \
+  --landing-page https://launch.example.com/plan \
+  --conversion launch_plan_started \
+  --utm-source search \
+  --utm-medium paid \
+  --utm-campaign founder-planning-intent \
+  --daily-budget-minor 3000 \
+  --total-budget-minor 30000 \
+  --stop-loss-minor 10000
+
+yogi ads creative prompt search-intent-test founder-planning-intent
+yogi ads review search-intent-test founder-planning-intent creative.json
+yogi ads plan search-intent-test founder-planning-intent \
+  --mode launch \
+  --approved
+```
+
+The launch-ready plan rechecks canonical creative against current budget,
+destination, conversion, and claims policy. It does not create or activate ads.
+See [docs/PAID_ADS.md](docs/PAID_ADS.md).
+
 ## Built-in playbooks
 
 | Channel        | Stages                                                                           |

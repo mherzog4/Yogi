@@ -33,4 +33,13 @@ export default {
     editorialMinimumScore: 80,
     prohibitedPhrases: ["guaranteed", "best-in-class", "game-changing"],
   },
+  paidAds: {
+    currency: "USD",
+    maxDailyBudgetMinor: 5000,
+    maxExperimentBudgetMinor: 50000,
+    maxSpendWithoutConversionMinor: 10000,
+    minimumCreativeVariants: 3,
+    allowedLandingPageHosts: ["launch.example.com"],
+    prohibitedPhrases: ["guaranteed results"],
+  },
 } satisfies YogiConfig;

@@ -287,4 +287,134 @@ bob@blocked.com,Blocked,Research,Relevant launch
     expect(output.join("\n")).toContain("Created repurpose plan with 2 assets");
     expect(output.join("\n")).toContain("Editorial review passed: 100/80");
   });
+
+  it("plans a paid experiment without creating or activating ads", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "yogi-cli-test-"));
+    temporaryDirectories.push(cwd);
+    const output: string[] = [];
+    const errors: string[] = [];
+    const context = {
+      cwd,
+      stdout: (value: string) => output.push(value),
+      stderr: (value: string) => errors.push(value),
+    };
+    await writeValidConfig(cwd);
+    await runCli(
+      [
+        "campaign",
+        "create",
+        "paid-ads",
+        "--name",
+        "Launch Ads",
+        "--goal",
+        "Generate qualified signups",
+      ],
+      context,
+    );
+
+    expect(
+      await runCli(
+        [
+          "ads",
+          "experiment",
+          "create",
+          "launch-ads",
+          "--name",
+          "Search intent test",
+          "--objective",
+          "Generate qualified signups",
+          "--hypothesis",
+          "Specific language attracts focused founders",
+          "--channel",
+          "search",
+          "--landing-page",
+          "https://launch.example.com/plan",
+          "--conversion",
+          "launch_plan_started",
+          "--utm-source",
+          "search",
+          "--utm-medium",
+          "paid",
+          "--utm-campaign",
+          "search-intent-test",
+          "--daily-budget-minor",
+          "3000",
+          "--total-budget-minor",
+          "30000",
+          "--stop-loss-minor",
+          "10000",
+        ],
+        context,
+      ),
+    ).toBe(0);
+    expect(
+      await runCli(
+        ["ads", "creative", "prompt", "launch-ads", "search-intent-test"],
+        context,
+      ),
+    ).toBe(0);
+
+    const creativePath = join(cwd, "creative.json");
+    await writeFile(
+      creativePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        experimentId: "search-intent-test",
+        variants: [
+          {
+            id: "variant-a",
+            headline: "Plan a focused SaaS launch",
+            body: "Turn a rough idea into a practical launch plan.",
+            callToAction: "Build your plan",
+          },
+          {
+            id: "variant-b",
+            headline: "Give your launch a clear map",
+            body: "Organize positioning, channels, and next steps.",
+            callToAction: "See the workflow",
+          },
+          {
+            id: "variant-c",
+            headline: "Launch with a credible sequence",
+            body: "Move from product idea to focused distribution.",
+            callToAction: "Start planning",
+          },
+        ],
+      }),
+      "utf8",
+    );
+    expect(
+      await runCli(
+        ["ads", "review", "launch-ads", "search-intent-test", creativePath],
+        context,
+      ),
+    ).toBe(0);
+    expect(
+      await runCli(
+        ["ads", "plan", "launch-ads", "search-intent-test", "--mode", "launch"],
+        context,
+      ),
+    ).toBe(1);
+    expect(
+      await runCli(
+        [
+          "ads",
+          "plan",
+          "launch-ads",
+          "search-intent-test",
+          "--mode",
+          "launch",
+          "--approved",
+        ],
+        context,
+      ),
+    ).toBe(0);
+
+    expect(output.join("\n")).toContain(
+      "Created paid experiment search-intent-test",
+    );
+    expect(output.join("\n")).toContain("Paid launch review passed");
+    expect(output.join("\n")).toContain("no external action was performed");
+    expect(errors.join("\n")).toContain("approved: true");
+  });
 });

@@ -16,6 +16,13 @@ import {
   importProspects,
   planOutboundBatch,
 } from "./outbound/store.js";
+import type { PaidChannel, PaidPlanMode } from "./paid/model.js";
+import {
+  createStoredPaidCreativePrompt,
+  createStoredPaidExperiment,
+  planStoredPaidExperiment,
+  reviewStoredPaidExperiment,
+} from "./paid/store.js";
 import { GTM_PLAYBOOKS, type GtmChannel } from "./playbooks.js";
 import {
   createCampaign,
@@ -47,6 +54,16 @@ Usage:
   yogi content prompt <campaign-id> <brief-id>
   yogi content repurpose <campaign-id> <brief-id> --format <format>...
   yogi content review <campaign-id> <brief-id> <draft-file>
+  yogi ads experiment create <campaign-id> --name <name>
+    --objective <objective> --hypothesis <hypothesis>
+    --channel <search|social|display> --landing-page <https-url>
+    --conversion <event> --utm-source <source> --utm-medium <medium>
+    --utm-campaign <campaign> --daily-budget-minor <integer>
+    --total-budget-minor <integer> --stop-loss-minor <integer>
+  yogi ads creative prompt <campaign-id> <experiment-id>
+  yogi ads review <campaign-id> <experiment-id> <creative-json>
+  yogi ads plan <campaign-id> <experiment-id>
+    [--mode <draft|launch>] [--approved]
 `;
 
 export interface CliContext {
@@ -429,6 +446,165 @@ const contentCommand = async (
   throw new CliError(`Unknown content command: ${subcommand ?? "(missing)"}`);
 };
 
+const requirePositiveInteger = (
+  value: string | undefined,
+  option: string,
+): number => {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new CliError(`${option} must be a positive integer`);
+  }
+  return parsed;
+};
+
+const adsCommand = async (
+  args: readonly string[],
+  context: CliContext,
+): Promise<void> => {
+  const [subcommand, ...rest] = args;
+
+  if (subcommand === "experiment" && rest[0] === "create") {
+    const [, campaignId, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        name: { type: "string" },
+        objective: { type: "string" },
+        hypothesis: { type: "string" },
+        channel: { type: "string" },
+        "landing-page": { type: "string" },
+        conversion: { type: "string" },
+        "utm-source": { type: "string" },
+        "utm-medium": { type: "string" },
+        "utm-campaign": { type: "string" },
+        "daily-budget-minor": { type: "string" },
+        "total-budget-minor": { type: "string" },
+        "stop-loss-minor": { type: "string" },
+      },
+      strict: true,
+    });
+    const channel = parsed.values.channel;
+    if (channel !== "search" && channel !== "social" && channel !== "display") {
+      throw new CliError("--channel must be search, social, or display");
+    }
+    const experiment = await createStoredPaidExperiment({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      name: requireValue(parsed.values.name, "--name is required"),
+      objective: requireValue(
+        parsed.values.objective,
+        "--objective is required",
+      ),
+      hypothesis: requireValue(
+        parsed.values.hypothesis,
+        "--hypothesis is required",
+      ),
+      channel: channel as PaidChannel,
+      landingPageUrl: requireValue(
+        parsed.values["landing-page"],
+        "--landing-page is required",
+      ),
+      conversionEvent: requireValue(
+        parsed.values.conversion,
+        "--conversion is required",
+      ),
+      utmSource: requireValue(
+        parsed.values["utm-source"],
+        "--utm-source is required",
+      ),
+      utmMedium: requireValue(
+        parsed.values["utm-medium"],
+        "--utm-medium is required",
+      ),
+      utmCampaign: requireValue(
+        parsed.values["utm-campaign"],
+        "--utm-campaign is required",
+      ),
+      dailyBudgetMinor: requirePositiveInteger(
+        parsed.values["daily-budget-minor"],
+        "--daily-budget-minor",
+      ),
+      totalBudgetMinor: requirePositiveInteger(
+        parsed.values["total-budget-minor"],
+        "--total-budget-minor",
+      ),
+      stopLossSpendMinor: requirePositiveInteger(
+        parsed.values["stop-loss-minor"],
+        "--stop-loss-minor",
+      ),
+    });
+    context.stdout(`Created paid experiment ${experiment.id}`);
+    context.stdout(
+      `Budget proposal: ${experiment.dailyBudgetMinor} daily / ${experiment.totalBudgetMinor} total ${experiment.currency} minor units`,
+    );
+    return;
+  }
+
+  if (subcommand === "creative" && rest[0] === "prompt") {
+    const [, campaignId, experimentId] = rest;
+    context.stdout(
+      await createStoredPaidCreativePrompt(
+        context.cwd,
+        requireValue(campaignId, "A campaign ID is required"),
+        requireValue(experimentId, "An experiment ID is required"),
+      ),
+    );
+    return;
+  }
+
+  if (subcommand === "review") {
+    const [campaignId, experimentId, creativePath] = rest;
+    const report = await reviewStoredPaidExperiment({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      experimentId: requireValue(experimentId, "An experiment ID is required"),
+      creativePath: requireValue(
+        creativePath,
+        "A creative JSON file is required",
+      ),
+    });
+    context.stdout(
+      `Paid launch review ${report.passed ? "passed" : "failed"} with ${report.issues.length} issue${report.issues.length === 1 ? "" : "s"}`,
+    );
+    for (const issue of report.issues) {
+      context.stdout(`  ${issue.code}: ${issue.message}`);
+    }
+    if (!report.passed) {
+      throw new Error("Experiment did not pass the paid launch gate");
+    }
+    return;
+  }
+
+  if (subcommand === "plan") {
+    const [campaignId, experimentId, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        mode: { type: "string", default: "draft" },
+        approved: { type: "boolean", default: false },
+      },
+      strict: true,
+    });
+    const mode = parsed.values.mode;
+    if (mode !== "draft" && mode !== "launch") {
+      throw new CliError("--mode must be draft or launch");
+    }
+    const plan = await planStoredPaidExperiment({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      experimentId: requireValue(experimentId, "An experiment ID is required"),
+      mode: mode as PaidPlanMode,
+      approved: parsed.values.approved,
+    });
+    context.stdout(
+      `Created ${plan.mode} paid plan for ${plan.experimentId}; no external action was performed`,
+    );
+    return;
+  }
+
+  throw new CliError(`Unknown ads command: ${subcommand ?? "(missing)"}`);
+};
+
 export const runCli = async (
   args: readonly string[],
   overrides: Partial<CliContext> = {},
@@ -484,6 +660,11 @@ export const runCli = async (
 
     if (command === "content") {
       await contentCommand(rest, context);
+      return 0;
+    }
+
+    if (command === "ads") {
+      await adsCommand(rest, context);
       return 0;
     }
 

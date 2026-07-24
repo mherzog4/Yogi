@@ -39,8 +39,7 @@ merged in PR #4. Sending adapter blocked on human review issue #3.
 ### 4. Content engine
 
 Status: grounded source, brief, repurposing, and editorial-review core
-implemented on the content-engine branch. Publishing adapters blocked on human
-review issue #5.
+merged in PR #6. Publishing adapters blocked on human review issue #5.
 
 - source library and reusable brand context
 - research-to-pillar workflow
@@ -49,6 +48,10 @@ review issue #5.
 - publishing adapters selected from the operator's channels
 
 ### 5. Paid acquisition
+
+Status: provider-neutral experiment, creative, budget, stop-loss, and
+launch-readiness core implemented on the paid-ads-core branch. First provider
+adapter blocked on human review issue #7.
 
 - experiment and creative schemas
 - landing-page message briefs

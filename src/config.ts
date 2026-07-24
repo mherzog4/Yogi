@@ -26,6 +26,16 @@ export interface ContentDefaults {
   readonly prohibitedPhrases: readonly string[];
 }
 
+export interface PaidAdsDefaults {
+  readonly currency: string;
+  readonly maxDailyBudgetMinor: number;
+  readonly maxExperimentBudgetMinor: number;
+  readonly maxSpendWithoutConversionMinor: number;
+  readonly minimumCreativeVariants: number;
+  readonly allowedLandingPageHosts: readonly string[];
+  readonly prohibitedPhrases: readonly string[];
+}
+
 export interface YogiConfig {
   readonly schemaVersion: 1;
   readonly workspace: {
@@ -42,6 +52,7 @@ export interface YogiConfig {
   };
   readonly outbound?: OutboundDefaults;
   readonly content?: ContentDefaults;
+  readonly paidAds?: PaidAdsDefaults;
 }
 
 export class ConfigValidationError extends Error {
@@ -204,6 +215,83 @@ export const validateYogiConfig = (input: unknown): YogiConfig => {
     }
   }
 
+  const paidAds = input.paidAds;
+  if (paidAds !== undefined) {
+    if (!isRecord(paidAds)) {
+      issues.push("paidAds must be an object");
+    } else {
+      if (
+        typeof paidAds.currency !== "string" ||
+        !/^[A-Z]{3}$/.test(paidAds.currency)
+      ) {
+        issues.push("paidAds.currency must be a three-letter uppercase code");
+      }
+      for (const key of [
+        "maxDailyBudgetMinor",
+        "maxExperimentBudgetMinor",
+        "maxSpendWithoutConversionMinor",
+      ] as const) {
+        const value = paidAds[key];
+        if (!Number.isSafeInteger(value) || Number(value) <= 0) {
+          issues.push(`paidAds.${key} must be a positive integer`);
+        }
+      }
+      if (
+        !Number.isSafeInteger(paidAds.minimumCreativeVariants) ||
+        Number(paidAds.minimumCreativeVariants) < 2
+      ) {
+        issues.push(
+          "paidAds.minimumCreativeVariants must be an integer of at least 2",
+        );
+      }
+      validateStringArray(
+        paidAds.allowedLandingPageHosts,
+        "paidAds.allowedLandingPageHosts",
+        issues,
+        true,
+      );
+      if (Array.isArray(paidAds.allowedLandingPageHosts)) {
+        for (const [index, host] of paidAds.allowedLandingPageHosts.entries()) {
+          if (
+            typeof host === "string" &&
+            (host.includes("://") ||
+              host.includes("/") ||
+              host !== host.toLocaleLowerCase("en-US"))
+          ) {
+            issues.push(
+              `paidAds.allowedLandingPageHosts[${index}] must be a lowercase hostname without a scheme or path`,
+            );
+          }
+        }
+      }
+      validateStringArray(
+        paidAds.prohibitedPhrases,
+        "paidAds.prohibitedPhrases",
+        issues,
+      );
+      if (
+        Number.isSafeInteger(paidAds.maxDailyBudgetMinor) &&
+        Number.isSafeInteger(paidAds.maxExperimentBudgetMinor) &&
+        Number(paidAds.maxDailyBudgetMinor) >
+          Number(paidAds.maxExperimentBudgetMinor)
+      ) {
+        issues.push(
+          "paidAds.maxDailyBudgetMinor must not exceed maxExperimentBudgetMinor",
+        );
+      }
+      if (
+        Number.isSafeInteger(paidAds.maxSpendWithoutConversionMinor) &&
+        Number.isSafeInteger(paidAds.maxExperimentBudgetMinor) &&
+        Number(paidAds.maxSpendWithoutConversionMinor) >
+          Number(paidAds.maxExperimentBudgetMinor)
+      ) {
+        issues.push(
+          "paidAds.maxSpendWithoutConversionMinor must not exceed maxExperimentBudgetMinor",
+        );
+      }
+    }
+  }
+
   if (issues.length > 0) throw new ConfigValidationError(issues);
   return input as unknown as YogiConfig;
 };
@@ -266,6 +354,15 @@ export default {
   content: {
     editorialMinimumScore: 80,
     prohibitedPhrases: ["guaranteed", "best-in-class", "game-changing"],
+  },
+  paidAds: {
+    currency: "TODO: Three-letter billing currency",
+    maxDailyBudgetMinor: 0, // Replace with an approved ceiling in minor units.
+    maxExperimentBudgetMinor: 0,
+    maxSpendWithoutConversionMinor: 0,
+    minimumCreativeVariants: 3,
+    allowedLandingPageHosts: ["TODO: approved.example"],
+    prohibitedPhrases: ["guaranteed results"],
   },
 } satisfies YogiConfig;
 `;
