@@ -9,6 +9,7 @@ import {
   type ConnectionStatus,
   type IntegrationProviderId,
   type NormalizedAdsMetrics,
+  type NormalizedOutboundEvent,
   type ProviderAccount,
   type ProviderConnection,
 } from "./types.js";
@@ -134,6 +135,52 @@ const MIGRATIONS = [
         ON approvals(operation_sha256, scope, approved_at);
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE outbound_events (
+        id TEXT PRIMARY KEY,
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        campaign_id TEXT NOT NULL,
+        external_campaign_id TEXT NOT NULL,
+        provider_event_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (
+          event_type IN (
+            'sent', 'opened', 'clicked', 'replied', 'bounced', 'unsubscribed'
+          )
+        ),
+        occurred_at TEXT NOT NULL,
+        prospect_email_hash TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        captured_at TEXT NOT NULL,
+        UNIQUE (
+          connection_id, external_campaign_id, provider_event_id
+        )
+      ) STRICT;
+
+      CREATE TABLE operation_reconciliations (
+        id TEXT PRIMARY KEY,
+        operation_id TEXT NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+        previous_status TEXT NOT NULL,
+        resolved_status TEXT NOT NULL CHECK (
+          resolved_status IN ('succeeded', 'failed')
+        ),
+        external_id TEXT,
+        response_sha256 TEXT,
+        reviewed_by TEXT NOT NULL,
+        note TEXT NOT NULL,
+        resolved_at TEXT NOT NULL,
+        UNIQUE (operation_id)
+      ) STRICT;
+
+      CREATE INDEX idx_outbound_events_campaign
+        ON outbound_events(campaign_id, occurred_at);
+      CREATE INDEX idx_outbound_events_external
+        ON outbound_events(connection_id, external_campaign_id, occurred_at);
+      CREATE INDEX idx_reconciliations_resolved
+        ON operation_reconciliations(resolved_at);
+    `,
+  },
 ] as const;
 
 const stableValue = (value: unknown): unknown => {
@@ -244,6 +291,24 @@ export interface ProviderOperation {
   readonly error?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface OperationReconciliation {
+  readonly id: string;
+  readonly operationId: string;
+  readonly previousStatus: OperationStatus;
+  readonly resolvedStatus: "succeeded" | "failed";
+  readonly externalId?: string;
+  readonly responseSha256?: string;
+  readonly reviewedBy: string;
+  readonly note: string;
+  readonly resolvedAt: string;
+}
+
+export interface StoredOutboundEvent extends NormalizedOutboundEvent {
+  readonly connectionId: string;
+  readonly campaignId: string;
+  readonly capturedAt: string;
 }
 
 interface OperationRow {
@@ -672,6 +737,64 @@ export class IntegrationDatabase {
     return operationFromRow(row);
   }
 
+  listOperations(
+    options: {
+      readonly connectionId?: string;
+      readonly status?: OperationStatus;
+    } = {},
+  ): readonly ProviderOperation[] {
+    if (
+      options.status !== undefined &&
+      options.status !== "pending" &&
+      options.status !== "succeeded" &&
+      options.status !== "failed" &&
+      options.status !== "unknown"
+    ) {
+      throw new Error(`Invalid operation status: ${String(options.status)}`);
+    }
+    if (options.connectionId && options.status) {
+      return (
+        this.#database
+          .prepare(
+            `SELECT * FROM operations
+             WHERE connection_id = ? AND status = ?
+             ORDER BY created_at DESC, id`,
+          )
+          .all(
+            options.connectionId,
+            options.status,
+          ) as unknown as OperationRow[]
+      ).map(operationFromRow);
+    }
+    if (options.connectionId) {
+      return (
+        this.#database
+          .prepare(
+            `SELECT * FROM operations
+             WHERE connection_id = ?
+             ORDER BY created_at DESC, id`,
+          )
+          .all(options.connectionId) as unknown as OperationRow[]
+      ).map(operationFromRow);
+    }
+    if (options.status) {
+      return (
+        this.#database
+          .prepare(
+            `SELECT * FROM operations
+             WHERE status = ?
+             ORDER BY created_at DESC, id`,
+          )
+          .all(options.status) as unknown as OperationRow[]
+      ).map(operationFromRow);
+    }
+    return (
+      this.#database
+        .prepare("SELECT * FROM operations ORDER BY created_at DESC, id")
+        .all() as unknown as OperationRow[]
+    ).map(operationFromRow);
+  }
+
   completeOperation(input: {
     readonly id: string;
     readonly status: Exclude<OperationStatus, "pending">;
@@ -700,6 +823,121 @@ export class IntegrationDatabase {
       .get(input.id) as OperationRow | undefined;
     if (!row) throw new Error(`Operation ${input.id} was not found`);
     return operationFromRow(row);
+  }
+
+  reconcileOperation(input: {
+    readonly connectionId: string;
+    readonly idempotencyKey: string;
+    readonly resolvedStatus: "succeeded" | "failed";
+    readonly reviewedBy: string;
+    readonly note: string;
+    readonly externalId?: string;
+    readonly response?: unknown;
+    readonly now?: Date;
+  }): ProviderOperation {
+    const reviewedBy = input.reviewedBy.trim();
+    const note = input.note.trim();
+    if (!reviewedBy || !note) {
+      throw new Error("Reconciliation reviewer and note are required");
+    }
+    if (
+      input.resolvedStatus !== "succeeded" &&
+      input.resolvedStatus !== "failed"
+    ) {
+      throw new Error("Reconciliation must resolve to succeeded or failed");
+    }
+    const current = this.getOperationByKey(
+      input.connectionId,
+      input.idempotencyKey,
+    );
+    if (current.status !== "unknown") {
+      throw new Error(
+        `Only unknown operations can be reconciled (current: ${current.status})`,
+      );
+    }
+    const timestamp = (input.now ?? new Date()).toISOString();
+    const externalId = input.externalId ?? current.externalId;
+    const responseJson =
+      input.response === undefined ? undefined : stableJson(input.response);
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const update = this.#database
+        .prepare(
+          `UPDATE operations
+           SET status = ?, external_id = ?, response_json = ?, error = ?,
+               updated_at = ?
+           WHERE id = ? AND status = 'unknown'`,
+        )
+        .run(
+          input.resolvedStatus,
+          externalId ?? null,
+          responseJson ?? null,
+          input.resolvedStatus === "failed" ? note : null,
+          timestamp,
+          current.id,
+        );
+      if (update.changes !== 1) {
+        throw new Error(
+          "Operation status changed before reconciliation could be recorded",
+        );
+      }
+      this.#database
+        .prepare(
+          `INSERT INTO operation_reconciliations(
+            id, operation_id, previous_status, resolved_status, external_id,
+            response_sha256, reviewed_by, note, resolved_at
+          ) VALUES (?, ?, 'unknown', ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          current.id,
+          input.resolvedStatus,
+          externalId ?? null,
+          responseJson
+            ? createHash("sha256").update(responseJson).digest("hex")
+            : null,
+          reviewedBy,
+          note,
+          timestamp,
+        );
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getOperationByKey(input.connectionId, input.idempotencyKey);
+  }
+
+  listOperationReconciliations(): readonly OperationReconciliation[] {
+    const rows = this.#database
+      .prepare(
+        `SELECT id, operation_id, previous_status, resolved_status,
+                external_id, response_sha256, reviewed_by, note, resolved_at
+         FROM operation_reconciliations
+         ORDER BY resolved_at DESC, id`,
+      )
+      .all() as unknown as {
+      id: string;
+      operation_id: string;
+      previous_status: OperationStatus;
+      resolved_status: "succeeded" | "failed";
+      external_id: string | null;
+      response_sha256: string | null;
+      reviewed_by: string;
+      note: string;
+      resolved_at: string;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      operationId: row.operation_id,
+      previousStatus: row.previous_status,
+      resolvedStatus: row.resolved_status,
+      ...(row.external_id ? { externalId: row.external_id } : {}),
+      ...(row.response_sha256 ? { responseSha256: row.response_sha256 } : {}),
+      reviewedBy: row.reviewed_by,
+      note: row.note,
+      resolvedAt: row.resolved_at,
+    }));
   }
 
   setSyncCursor(input: {
@@ -778,6 +1016,99 @@ export class IntegrationDatabase {
         input.connectionId,
         input.providerEventId,
       );
+  }
+
+  storeOutboundEvents(input: {
+    readonly connectionId: string;
+    readonly campaignId: string;
+    readonly events: readonly NormalizedOutboundEvent[];
+    readonly now?: Date;
+  }): number {
+    if (input.events.length === 0) return 0;
+    const capturedAt = (input.now ?? new Date()).toISOString();
+    let inserted = 0;
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const statement = this.#database.prepare(
+        `INSERT OR IGNORE INTO outbound_events(
+          id, connection_id, campaign_id, external_campaign_id,
+          provider_event_id, event_type, occurred_at, prospect_email_hash,
+          metadata_json, captured_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const event of input.events) {
+        if (
+          !event.providerEventId.trim() ||
+          !event.externalCampaignId.trim() ||
+          Number.isNaN(Date.parse(event.occurredAt))
+        ) {
+          throw new Error("Outbound event identity and timestamp are required");
+        }
+        if (
+          event.prospectEmailHash &&
+          !/^[a-f0-9]{64}$/.test(event.prospectEmailHash)
+        ) {
+          throw new Error("Outbound event prospectEmailHash must be SHA-256");
+        }
+        const result = statement.run(
+          randomUUID(),
+          input.connectionId,
+          input.campaignId,
+          event.externalCampaignId,
+          event.providerEventId,
+          event.type,
+          event.occurredAt,
+          event.prospectEmailHash ?? null,
+          stableJson(event.metadata ?? {}),
+          capturedAt,
+        );
+        inserted += Number(result.changes);
+      }
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    return inserted;
+  }
+
+  listOutboundEvents(
+    connectionId: string,
+    externalCampaignId: string,
+  ): readonly StoredOutboundEvent[] {
+    const rows = this.#database
+      .prepare(
+        `SELECT connection_id, campaign_id, external_campaign_id,
+                provider_event_id, event_type, occurred_at,
+                prospect_email_hash, metadata_json, captured_at
+         FROM outbound_events
+         WHERE connection_id = ? AND external_campaign_id = ?
+         ORDER BY occurred_at, provider_event_id`,
+      )
+      .all(connectionId, externalCampaignId) as unknown as {
+      connection_id: string;
+      campaign_id: string;
+      external_campaign_id: string;
+      provider_event_id: string;
+      event_type: NormalizedOutboundEvent["type"];
+      occurred_at: string;
+      prospect_email_hash: string | null;
+      metadata_json: string;
+      captured_at: string;
+    }[];
+    return rows.map((row) => ({
+      connectionId: row.connection_id,
+      campaignId: row.campaign_id,
+      externalCampaignId: row.external_campaign_id,
+      providerEventId: row.provider_event_id,
+      type: row.event_type,
+      occurredAt: row.occurred_at,
+      ...(row.prospect_email_hash
+        ? { prospectEmailHash: row.prospect_email_hash }
+        : {}),
+      metadata: parseJsonObject(row.metadata_json),
+      capturedAt: row.captured_at,
+    }));
   }
 
   upsertMetricSnapshot(input: {

@@ -115,8 +115,9 @@ does not produce every required artifact.
 
 Every workspace has a private SQLite integration ledger at
 `.yogi/private/yogi.sqlite`. It stores provider connections, external IDs,
-idempotent operations, approval records, sync cursors, webhook receipts, and
-normalized metrics. Campaign intent and aggregate reports remain reviewable in
+idempotent operations, approval records, reconciliation audits, sync cursors,
+normalized outbound events, webhook receipts, and paid metrics. Campaign intent
+and aggregate reports remain reviewable in
 Git.
 
 Configure connections with secret references:
@@ -139,7 +140,7 @@ EmailBison, Google Ads, LinkedIn Ads, TikTok Ads, and Meta Ads. See
 
 Paid-ad connections can create reviewed, paused campaign shells with hard
 budget values, activate them through a separate named approval, poll daily
-metrics, and automatically pause at a configured total-budget or
+metrics with resumable cursors, and automatically pause at a configured total-budget or
 no-conversion stop-loss. See [docs/PAID_ADS.md](docs/PAID_ADS.md).
 
 ## Outbound email

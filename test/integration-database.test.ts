@@ -31,7 +31,7 @@ describe("integration database", () => {
     const path = integrationDatabasePath(cwd);
     const database = new IntegrationDatabase(path);
 
-    expect(database.schemaVersion()).toBe(1);
+    expect(database.schemaVersion()).toBe(2);
     expect(database.journalMode()).toBe("wal");
     expect(database.integrityCheck()).toBe("ok");
 
@@ -221,6 +221,102 @@ describe("integration database", () => {
         conversions: 4,
       }),
     ]);
+
+    const outboundEvent = {
+      externalCampaignId: "42",
+      providerEventId: "reply-1",
+      type: "replied" as const,
+      occurredAt: "2026-07-24T13:00:00.000Z",
+      prospectEmailHash: "a".repeat(64),
+      metadata: { sentiment: "positive" },
+    };
+    expect(
+      database.storeOutboundEvents({
+        connectionId: connection.id,
+        campaignId: "launch-outbound",
+        events: [outboundEvent],
+      }),
+    ).toBe(1);
+    expect(
+      database.storeOutboundEvents({
+        connectionId: connection.id,
+        campaignId: "launch-outbound",
+        events: [outboundEvent],
+      }),
+    ).toBe(0);
+    expect(database.listOutboundEvents(connection.id, "42")).toEqual([
+      expect.objectContaining({
+        campaignId: "launch-outbound",
+        providerEventId: "reply-1",
+        type: "replied",
+        prospectEmailHash: "a".repeat(64),
+      }),
+    ]);
+    database.close();
+  });
+
+  it("reconciles an unknown provider write exactly once with an audit record", async () => {
+    const cwd = await temporaryDirectory();
+    const database = new IntegrationDatabase(integrationDatabasePath(cwd));
+    const connection = database.createConnection({
+      provider: "smartlead",
+      name: "Smartlead",
+      secretRef: "env:SMARTLEAD_API_KEY",
+      id: "smartlead",
+    });
+    const operation = database.beginOperation({
+      connectionId: connection.id,
+      campaignId: "launch",
+      action: "outbound:create-draft",
+      idempotencyKey: "launch:create-draft:v1",
+      request: { name: "Launch" },
+    });
+    database.completeOperation({
+      id: operation.id,
+      status: "unknown",
+      externalId: "remote-42",
+      error: "Provider accepted the request before the connection closed",
+    });
+
+    expect(database.listOperations({ status: "unknown" })).toHaveLength(1);
+    const response = {
+      externalCampaignId: "remote-42",
+      externalStatus: "DRAFT",
+    };
+    const reconciled = database.reconcileOperation({
+      connectionId: connection.id,
+      idempotencyKey: operation.idempotencyKey,
+      resolvedStatus: "succeeded",
+      reviewedBy: "owner",
+      note: "Confirmed the single paused campaign in the provider UI",
+      response,
+      now: new Date("2026-07-24T15:00:00.000Z"),
+    });
+    expect(reconciled).toMatchObject({
+      status: "succeeded",
+      externalId: "remote-42",
+      response,
+    });
+    expect(database.listOperationReconciliations()).toEqual([
+      expect.objectContaining({
+        operationId: operation.id,
+        previousStatus: "unknown",
+        resolvedStatus: "succeeded",
+        reviewedBy: "owner",
+        responseSha256: sha256Json(response),
+      }),
+    ]);
+    await expect(
+      Promise.resolve().then(() =>
+        database.reconcileOperation({
+          connectionId: connection.id,
+          idempotencyKey: operation.idempotencyKey,
+          resolvedStatus: "failed",
+          reviewedBy: "owner",
+          note: "Second opinion",
+        }),
+      ),
+    ).rejects.toThrow("Only unknown operations");
     database.close();
   });
 

@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli } from "../src/commands.js";
+import {
+  IntegrationDatabase,
+  integrationDatabasePath,
+} from "../src/integrations/database.js";
 import { writeValidConfig } from "./helpers.js";
 
 const temporaryDirectories: string[] = [];
@@ -454,7 +458,7 @@ bob@blocked.com,Blocked,Research,Relevant launch
     );
 
     expect(errors).toEqual([]);
-    expect(output.join("\n")).toContain("schema 1, wal");
+    expect(output.join("\n")).toContain("schema 2, wal");
     expect(output.join("\n")).toContain("smartlead");
     expect(output.join("\n")).toContain("Only the secret reference was stored");
     expect(output.join("\n")).not.toContain("private-value");
@@ -517,5 +521,81 @@ bob@blocked.com,Blocked,Research,Relevant launch
     expect(output.join("\n")).toContain('"US"');
     expect(output.join("\n")).toContain('"apiVersion": "v25.0"');
     expect(output.join("\n")).not.toContain("access-token");
+  });
+
+  it("lists and reconciles an unknown provider operation with sanitized evidence", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "yogi-cli-test-"));
+    temporaryDirectories.push(cwd);
+    const output: string[] = [];
+    const errors: string[] = [];
+    const context = {
+      cwd,
+      stdout: (value: string) => output.push(value),
+      stderr: (value: string) => errors.push(value),
+    };
+    const database = new IntegrationDatabase(integrationDatabasePath(cwd));
+    database.createConnection({
+      id: "connection-1",
+      provider: "instantly",
+      name: "Instantly",
+      secretRef: "env:INSTANTLY_API_KEY",
+    });
+    const operation = database.beginOperation({
+      connectionId: "connection-1",
+      campaignId: "launch",
+      action: "outbound:create-draft",
+      idempotencyKey: "launch:create-draft:v1",
+      request: { name: "Launch" },
+    });
+    database.completeOperation({
+      id: operation.id,
+      status: "unknown",
+      error: "Connection closed after provider acceptance",
+    });
+    database.close();
+
+    const responsePath = join(cwd, "reconciliation.json");
+    await writeFile(
+      responsePath,
+      JSON.stringify({
+        externalCampaignId: "remote-1",
+        externalStatus: "DRAFT",
+      }),
+    );
+    expect(
+      await runCli(
+        ["integrations", "operations", "--status", "unknown"],
+        context,
+      ),
+    ).toBe(0);
+    expect(
+      await runCli(
+        [
+          "integrations",
+          "reconcile",
+          "connection-1",
+          "launch:create-draft:v1",
+          "--status",
+          "succeeded",
+          "--reviewed-by",
+          "owner",
+          "--note",
+          "Confirmed exactly one paused campaign",
+          "--response-file",
+          responsePath,
+        ],
+        context,
+      ),
+    ).toBe(0);
+    expect(await runCli(["integrations", "reconciliations"], context)).toBe(0);
+
+    expect(errors).toEqual([]);
+    expect(output.join("\n")).toContain(
+      "unknown · connection-1 · launch:create-draft:v1",
+    );
+    expect(output.join("\n")).toContain(
+      "Reconciled launch:create-draft:v1 as succeeded",
+    );
+    expect(output.join("\n")).toContain("succeeded");
   });
 });

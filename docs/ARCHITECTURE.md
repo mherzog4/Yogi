@@ -45,7 +45,8 @@ without carrying a fork of the full engine.
 - `src/paid/store.ts` persists paid artifacts and rechecks canonical creative
   against current workspace ceilings before launch planning.
 - `src/integrations/database.ts` owns the private SQLite ledger, migrations,
-  backups, idempotency, approvals, cursors, webhook receipts, and metrics.
+  backups, idempotency, approvals, cursors, normalized outbound events,
+  reconciliation audits, webhook receipts, and metrics.
 - `src/integrations/types.ts` defines capability-aware outbound and ads adapter
   contracts.
 - `src/integrations/secrets.ts` resolves opaque credential references just in
@@ -194,6 +195,8 @@ connection, action, campaign, and idempotency key identify the operation.
 Activation-capable calls require a valid approval for that exact operation.
 Successful operations replay their sanitized recorded result instead of
 repeating an external mutation.
+Unknown outcomes require a one-time, named reconciliation backed by sanitized
+evidence; this changes the operation state and appends a separate audit record.
 
 SQLite is appropriate for a local CLI or one persistent exe.dev control VM.
 Ephemeral agent VMs should not receive the database. A multi-replica hosted

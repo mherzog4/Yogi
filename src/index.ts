@@ -155,8 +155,10 @@ export {
 } from "./integrations/database.js";
 export type {
   CampaignMapping,
+  OperationReconciliation,
   OperationStatus,
   ProviderOperation,
+  StoredOutboundEvent,
 } from "./integrations/database.js";
 export {
   CompositeSecretResolver,

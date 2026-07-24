@@ -144,6 +144,18 @@ Pause is explicit but does not need an approval because it reduces sending:
 yogi outbound pause founder-launch --connection <connection-id>
 ```
 
+Poll delivery and engagement events into private SQLite:
+
+```bash
+yogi outbound sync founder-launch --connection <connection-id>
+```
+
+Yogi stores normalized `sent`, `opened`, `clicked`, `replied`, `bounced`, and
+`unsubscribed` events. Contact identity is represented by a SHA-256 email hash
+when the provider exposes an address; raw provider payloads and email addresses
+are not copied into the event ledger. A provider event ID is inserted once,
+and the polling cursor advances only after the batch is safely stored.
+
 Smartlead sender IDs and EmailBison sender IDs are numeric. Instantly uses the
 sender email address as its account ID. The account-discovery command prints
 the exact value to pass.

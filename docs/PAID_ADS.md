@@ -196,10 +196,20 @@ yogi ads sync launch-ads search-intent-test \
   --since 2026-07-01
 ```
 
+The first sync requires `--since`. Later syncs reuse the stored cursor, so the
+flag can be omitted:
+
+```bash
+yogi ads sync launch-ads search-intent-test \
+  --connection <connection-id>
+```
+
 Yogi normalizes impressions, clicks, spend in integer minor units,
 conversions, date, and currency. If an active campaign reaches its total budget
 or reaches its stop-loss with zero conversions, synchronization records an
 idempotent safety operation and pauses the provider campaign automatically.
+Metrics are stored before the cursor advances. Re-reading a boundary date
+upserts the same daily row rather than double-counting it.
 
 Provider dashboards remain the final review surface for targeting, asset
 compatibility, policy review status, billing, and the exact objects eligible

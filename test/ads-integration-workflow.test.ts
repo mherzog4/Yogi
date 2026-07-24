@@ -194,6 +194,7 @@ describe("paid ads integration workflow", () => {
       since: "2026-07-01",
     });
     expect(sync.autoPaused).toBe(true);
+    expect(sync.cursor).toBe("2026-07-24");
     expect(adapter.pause).toHaveBeenCalledOnce();
     expect(
       database.getCampaignMapping(
@@ -210,6 +211,18 @@ describe("paid ads integration workflow", () => {
     expect(
       database.listMetricSnapshots("connection-1", "remote-1"),
     ).toHaveLength(1);
+    await expect(
+      workflow.syncMetrics({
+        connectionId: "connection-1",
+        campaignId: "launch-ads",
+        experimentId: "intent-test",
+      }),
+    ).resolves.toMatchObject({ cursor: "2026-07-24" });
+    expect(adapter.syncMetrics).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "remote-1",
+      "2026-07-24",
+    );
     await expect(
       workflow.activate({
         connectionId: "connection-1",

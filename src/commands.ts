@@ -16,6 +16,7 @@ import {
   integrationDatabasePath,
   openIntegrationDatabase,
 } from "./integrations/database.js";
+import type { OperationStatus } from "./integrations/database.js";
 import { createIntegrationRegistry } from "./integrations/defaults.js";
 import { normalizeProviderBaseUrl } from "./integrations/http.js";
 import { IntegrationService } from "./integrations/registry.js";
@@ -72,6 +73,7 @@ Usage:
   yogi outbound activate <campaign-id> --connection <id>
     --approved-by <name> [--attempt <integer>]
   yogi outbound pause <campaign-id> --connection <id> [--attempt <integer>]
+  yogi outbound sync <campaign-id> --connection <id>
   yogi content source add <campaign-id> <file> --title <title>
     --type <original|customer-research|external> [--url <url>] [--deidentified]
   yogi content brief create <campaign-id> --title <title> --thesis <thesis>
@@ -96,7 +98,7 @@ Usage:
   yogi ads pause <campaign-id> <experiment-id> --connection <id>
     [--attempt <integer>]
   yogi ads sync <campaign-id> <experiment-id> --connection <id>
-    --since <YYYY-MM-DD>
+    [--since <YYYY-MM-DD>]
   yogi integrations init
   yogi integrations status
   yogi integrations providers
@@ -109,6 +111,12 @@ Usage:
   yogi integrations verify <connection-id>
   yogi integrations accounts <connection-id> [--json]
   yogi integrations list [--json]
+  yogi integrations operations [--connection <id>] [--status <status>]
+    [--json]
+  yogi integrations reconcile <connection-id> <idempotency-key>
+    --status <succeeded|failed> --reviewed-by <name> --note <note>
+    [--external-id <id>] [--response-file <sanitized-json>]
+  yogi integrations reconciliations [--json]
   yogi integrations backup <destination>
 `;
 
@@ -138,6 +146,60 @@ const operationAttempt = (value: string | undefined): number => {
     throw new CliError("--attempt must be a positive integer");
   }
   return attempt;
+};
+
+const operationStatus = (
+  value: string | undefined,
+): OperationStatus | undefined => {
+  if (value === undefined) return undefined;
+  if (
+    value !== "pending" &&
+    value !== "succeeded" &&
+    value !== "failed" &&
+    value !== "unknown"
+  ) {
+    throw new CliError(
+      "--status must be pending, succeeded, failed, or unknown",
+    );
+  }
+  return value;
+};
+
+const hasSensitiveKey = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.some(hasSensitiveKey);
+  if (!value || typeof value !== "object") return false;
+  return Object.entries(value as Record<string, unknown>).some(
+    ([key, nested]) =>
+      /token|secret|password|authorization|api.?key/i.test(key) ||
+      hasSensitiveKey(nested),
+  );
+};
+
+const isJsonObject = (
+  value: unknown,
+): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readSanitizedJson = async (
+  cwd: string,
+  filePath: string,
+): Promise<unknown> => {
+  const raw = await readFile(resolve(cwd, filePath), "utf8");
+  if (Buffer.byteLength(raw, "utf8") > 64 * 1024) {
+    throw new CliError("--response-file must be no larger than 64 KiB");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(raw) as unknown;
+  } catch {
+    throw new CliError("--response-file must contain valid JSON");
+  }
+  if (hasSensitiveKey(value)) {
+    throw new CliError(
+      "--response-file contains a credential-like field; provide sanitized evidence only",
+    );
+  }
+  return value;
 };
 
 const outboundWeekdays = (value: string | undefined): readonly number[] => {
@@ -464,7 +526,11 @@ const outboundCommand = async (
     return;
   }
 
-  if (subcommand === "activate" || subcommand === "pause") {
+  if (
+    subcommand === "activate" ||
+    subcommand === "pause" ||
+    subcommand === "sync"
+  ) {
     const [campaignIdValue, ...optionArgs] = rest;
     const parsed = parseArgs({
       args: optionArgs,
@@ -500,13 +566,24 @@ const outboundCommand = async (
           attempt: operationAttempt(parsed.values.attempt),
         });
         context.stdout(`Activated provider campaign for ${campaignId}`);
-      } else {
+      } else if (subcommand === "pause") {
         await workflow.pause({
           connectionId,
           campaignId,
           attempt: operationAttempt(parsed.values.attempt),
         });
         context.stdout(`Paused provider campaign for ${campaignId}`);
+      } else {
+        const result = await workflow.syncEvents({
+          connectionId,
+          campaignId,
+        });
+        context.stdout(
+          `Stored ${result.inserted} new event${result.inserted === 1 ? "" : "s"} from ${result.received} received`,
+        );
+        if (result.nextCursor) {
+          context.stdout(`Sync cursor: ${result.nextCursor}`);
+        }
       }
     } finally {
       database.close();
@@ -926,7 +1003,7 @@ const adsCommand = async (
           connectionId,
           campaignId,
           experimentId,
-          since: requireValue(parsed.values.since, "--since is required"),
+          ...(parsed.values.since ? { since: parsed.values.since } : {}),
         });
         context.stdout(
           `Stored ${result.metrics.length} daily metric row${result.metrics.length === 1 ? "" : "s"}`,
@@ -936,6 +1013,7 @@ const adsCommand = async (
             "Yogi automatically paused the campaign because a spend ceiling was reached.",
           );
         }
+        context.stdout(`Sync cursor: ${result.cursor}`);
       }
     } finally {
       database.close();
@@ -1161,6 +1239,165 @@ const integrationsCommand = async (
         for (const connection of connections) {
           context.stdout(
             `${connection.id} · ${connection.provider} · ${connection.name} · ${connection.status}`,
+          );
+        }
+      }
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "operations") {
+    const parsed = parseArgs({
+      args: rest,
+      options: {
+        connection: { type: "string" },
+        status: { type: "string" },
+        json: { type: "boolean", default: false },
+      },
+      strict: true,
+    });
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const status = operationStatus(parsed.values.status);
+      const operations = database.listOperations({
+        ...(parsed.values.connection
+          ? { connectionId: parsed.values.connection }
+          : {}),
+        ...(status ? { status } : {}),
+      });
+      const summaries = operations.map(
+        ({ response: _response, ...operation }) => operation,
+      );
+      if (parsed.values.json) {
+        context.stdout(JSON.stringify(summaries, null, 2));
+      } else if (summaries.length === 0) {
+        context.stdout("No provider operations match those filters.");
+      } else {
+        for (const operation of summaries) {
+          context.stdout(
+            `${operation.status} · ${operation.connectionId} · ${operation.idempotencyKey} · ${operation.action}`,
+          );
+        }
+      }
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "reconcile") {
+    const [connectionIdValue, idempotencyKeyValue, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        status: { type: "string" },
+        "reviewed-by": { type: "string" },
+        note: { type: "string" },
+        "external-id": { type: "string" },
+        "response-file": { type: "string" },
+      },
+      strict: true,
+    });
+    const connectionId = requireValue(
+      connectionIdValue,
+      "A connection ID is required",
+    );
+    const idempotencyKey = requireValue(
+      idempotencyKeyValue,
+      "An idempotency key is required",
+    );
+    const status = parsed.values.status;
+    if (status !== "succeeded" && status !== "failed") {
+      throw new CliError("--status must be succeeded or failed");
+    }
+    const response = parsed.values["response-file"]
+      ? await readSanitizedJson(context.cwd, parsed.values["response-file"])
+      : undefined;
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const current = database.getOperationByKey(connectionId, idempotencyKey);
+      if (
+        status === "succeeded" &&
+        current.action.includes("create-draft") &&
+        (!isJsonObject(response) ||
+          typeof response.externalCampaignId !== "string" ||
+          !response.externalCampaignId.trim() ||
+          typeof response.externalStatus !== "string" ||
+          !response.externalStatus.trim())
+      ) {
+        throw new CliError(
+          "Successful create-draft reconciliation requires a sanitized response with externalCampaignId and externalStatus",
+        );
+      }
+      if (
+        status === "succeeded" &&
+        current.action === "outbound:upsert-prospects" &&
+        (!isJsonObject(response) ||
+          !Number.isSafeInteger(response.accepted) ||
+          Number(response.accepted) < 0 ||
+          !Number.isSafeInteger(response.rejected) ||
+          Number(response.rejected) < 0)
+      ) {
+        throw new CliError(
+          "Successful prospect reconciliation requires a sanitized response with non-negative accepted and rejected counts",
+        );
+      }
+      const responseExternalId =
+        isJsonObject(response) &&
+        "externalCampaignId" in response &&
+        typeof response.externalCampaignId === "string"
+          ? response.externalCampaignId
+          : undefined;
+      if (
+        parsed.values["external-id"] &&
+        responseExternalId &&
+        parsed.values["external-id"] !== responseExternalId
+      ) {
+        throw new CliError(
+          "--external-id does not match response externalCampaignId",
+        );
+      }
+      const externalId = parsed.values["external-id"] ?? responseExternalId;
+      const operation = database.reconcileOperation({
+        connectionId,
+        idempotencyKey,
+        resolvedStatus: status,
+        reviewedBy: requireValue(
+          parsed.values["reviewed-by"],
+          "--reviewed-by is required",
+        ),
+        note: requireValue(parsed.values.note, "--note is required"),
+        ...(externalId ? { externalId } : {}),
+        ...(response === undefined ? {} : { response }),
+      });
+      context.stdout(
+        `Reconciled ${operation.idempotencyKey} as ${operation.status}`,
+      );
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "reconciliations") {
+    const parsed = parseArgs({
+      args: rest,
+      options: { json: { type: "boolean", default: false } },
+      strict: true,
+    });
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const reconciliations = database.listOperationReconciliations();
+      if (parsed.values.json) {
+        context.stdout(JSON.stringify(reconciliations, null, 2));
+      } else if (reconciliations.length === 0) {
+        context.stdout("No provider operations have been reconciled.");
+      } else {
+        for (const reconciliation of reconciliations) {
+          context.stdout(
+            `${reconciliation.resolvedStatus} · ${reconciliation.operationId} · ${reconciliation.reviewedBy} · ${reconciliation.resolvedAt}`,
           );
         }
       }
