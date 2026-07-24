@@ -6,6 +6,7 @@ import {
   createStoredPaidCreativePrompt,
   createStoredPaidExperiment,
   planStoredPaidExperiment,
+  readStoredAdsDraftInput,
   reviewStoredPaidExperiment,
 } from "../src/paid/store.js";
 import { createCampaign } from "../src/workspace.js";
@@ -107,6 +108,14 @@ describe("paid experiment workspace", () => {
     });
     expect(review.passed).toBe(true);
     expect(review.creativeSha256).toMatch(/^[a-f0-9]{64}$/);
+    await expect(
+      readStoredAdsDraftInput(cwd, "launch-ads", experiment.id, "customer-123"),
+    ).resolves.toMatchObject({
+      campaignId: "launch-ads",
+      externalAccountId: "customer-123",
+      experiment: { id: experiment.id },
+      readiness: { passed: true },
+    });
 
     await expect(
       planStoredPaidExperiment({

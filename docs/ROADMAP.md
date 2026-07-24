@@ -52,14 +52,16 @@ merged in PR #6. Publishing adapters blocked on human review issue #5.
 ### 5. Paid acquisition
 
 Status: provider-neutral experiment, creative, budget, stop-loss, and
-launch-readiness core implemented on the paid-ads-core branch. First provider
-adapter blocked on human review issue #7.
+Status: launch-readiness core plus Google, LinkedIn, TikTok, and Meta account
+verification, paused draft creation, activation, pausing, daily metrics, and
+automatic stop-loss controls implemented. Live account validation is tracked
+in human review issue #7.
 
 - experiment and creative schemas
 - landing-page message briefs
 - event and attribution plans
 - budget, audience, and stop-loss controls
-- channel adapters selected from the operator's ad accounts
+- provider-specific creative upload and structured targeting builders
 
 ### 6. Operations
 
@@ -75,14 +77,14 @@ metrics, and online backups implemented on the integration-core branch.
 
 ## Decisions requiring operator input
 
-These choices should be made immediately before their implementation slice:
+These choices remain operator-owned:
 
-- primary outbound platform and mailbox setup;
-- first paid channel and maximum test budget;
+- outbound mailbox setup and safe volume limits;
+- paid account permissions, exact targeting, and maximum test budget;
 - primary content formats and publishing destinations;
 - canonical product positioning, proof, and voice sources;
 - preferred agent and model defaults;
 - whether campaign VMs should normally be ephemeral or persistent.
 
-Until those choices are made, Yogi will keep provider integrations behind
-interfaces and use non-mutating preparation stages.
+Yogi enforces these choices through explicit configuration, review artifacts,
+named approvals, and human-review issues rather than guessing them.

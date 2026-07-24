@@ -54,6 +54,7 @@ export {
   createStoredPaidExperiment,
   planStoredPaidExperiment,
   readPaidExperiment,
+  readStoredAdsDraftInput,
   reviewStoredPaidExperiment,
 } from "./paid/store.js";
 export type { CreatePaidExperimentOptions } from "./paid/store.js";
@@ -184,6 +185,14 @@ export type {
   PublishOutboundDraftOptions,
   PublishOutboundDraftResult,
 } from "./integrations/outbound/workflow.js";
+export {
+  GoogleAdsAdapter,
+  LinkedInAdsAdapter,
+  MetaAdsAdapter,
+  TikTokAdsAdapter,
+  registerAdsAdapters,
+} from "./integrations/ads/index.js";
+export { PaidAdsIntegrationWorkflow } from "./integrations/ads/workflow.js";
 export {
   INTEGRATION_PROVIDERS,
   integrationCategory,

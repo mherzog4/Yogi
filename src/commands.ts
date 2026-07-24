@@ -19,9 +19,11 @@ import {
 import { createIntegrationRegistry } from "./integrations/defaults.js";
 import { normalizeProviderBaseUrl } from "./integrations/http.js";
 import { IntegrationService } from "./integrations/registry.js";
+import { PaidAdsIntegrationWorkflow } from "./integrations/ads/workflow.js";
 import { OutboundIntegrationWorkflow } from "./integrations/outbound/workflow.js";
 import {
   INTEGRATION_PROVIDERS,
+  integrationCategory,
   isIntegrationProviderId,
 } from "./integrations/types.js";
 import type { OutboundBatchMode } from "./outbound/model.js";
@@ -36,6 +38,7 @@ import {
   createStoredPaidCreativePrompt,
   createStoredPaidExperiment,
   planStoredPaidExperiment,
+  readStoredAdsDraftInput,
   reviewStoredPaidExperiment,
 } from "./paid/store.js";
 import { GTM_PLAYBOOKS, type GtmChannel } from "./playbooks.js";
@@ -86,12 +89,23 @@ Usage:
   yogi ads review <campaign-id> <experiment-id> <creative-json>
   yogi ads plan <campaign-id> <experiment-id>
     [--mode <draft|launch>] [--approved]
+  yogi ads publish <campaign-id> <experiment-id> --connection <id>
+    --approved-by <name> [--attempt <integer>]
+  yogi ads activate <campaign-id> <experiment-id> --connection <id>
+    --approved-by <name> [--attempt <integer>]
+  yogi ads pause <campaign-id> <experiment-id> --connection <id>
+    [--attempt <integer>]
+  yogi ads sync <campaign-id> <experiment-id> --connection <id>
+    --since <YYYY-MM-DD>
   yogi integrations init
   yogi integrations status
   yogi integrations providers
   yogi integrations connect <provider> --name <name>
     --secret-ref <env:VARIABLE_NAME> [--account <external-id>]
-    [--base-url <https-url>]
+    [--base-url <https-url>] [--api-version <version>]
+    [--manager-account <google-customer-id>]
+    [--eu-political-ads <contains|does-not-contain>]
+    [--target-country <ISO-2>...]
   yogi integrations verify <connection-id>
   yogi integrations accounts <connection-id> [--json]
   yogi integrations list [--json]
@@ -792,6 +806,143 @@ const adsCommand = async (
     return;
   }
 
+  if (subcommand === "publish") {
+    const [campaignIdValue, experimentIdValue, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        connection: { type: "string" },
+        "approved-by": { type: "string" },
+        attempt: { type: "string" },
+      },
+      strict: true,
+    });
+    const campaignId = requireValue(
+      campaignIdValue,
+      "A campaign ID is required",
+    );
+    const experimentId = requireValue(
+      experimentIdValue,
+      "An experiment ID is required",
+    );
+    const connectionId = requireValue(
+      parsed.values.connection,
+      "--connection is required",
+    );
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const connection = database.getConnection(connectionId);
+      const externalAccountId = requireValue(
+        connection.externalAccountId,
+        "The ad connection must have a verified external account ID",
+      );
+      const input = await readStoredAdsDraftInput(
+        context.cwd,
+        campaignId,
+        experimentId,
+        externalAccountId,
+      );
+      const workflow = new PaidAdsIntegrationWorkflow({
+        database,
+        registry: createIntegrationRegistry(),
+      });
+      const draft = await workflow.publishDraft({
+        connectionId,
+        input,
+        approvedBy: requireValue(
+          parsed.values["approved-by"],
+          "--approved-by is required",
+        ),
+        attempt: operationAttempt(parsed.values.attempt),
+      });
+      context.stdout(
+        `Created paused ${connection.provider} campaign ${draft.externalCampaignId}`,
+      );
+      context.stdout(
+        "No ad was activated and no creative was uploaded. Finish provider-specific targeting and creative review before activation.",
+      );
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (
+    subcommand === "activate" ||
+    subcommand === "pause" ||
+    subcommand === "sync"
+  ) {
+    const [campaignIdValue, experimentIdValue, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        connection: { type: "string" },
+        "approved-by": { type: "string" },
+        attempt: { type: "string" },
+        since: { type: "string" },
+      },
+      strict: true,
+    });
+    const campaignId = requireValue(
+      campaignIdValue,
+      "A campaign ID is required",
+    );
+    const experimentId = requireValue(
+      experimentIdValue,
+      "An experiment ID is required",
+    );
+    const connectionId = requireValue(
+      parsed.values.connection,
+      "--connection is required",
+    );
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const workflow = new PaidAdsIntegrationWorkflow({
+        database,
+        registry: createIntegrationRegistry(),
+      });
+      if (subcommand === "activate") {
+        await workflow.activate({
+          connectionId,
+          campaignId,
+          experimentId,
+          approvedBy: requireValue(
+            parsed.values["approved-by"],
+            "--approved-by is required",
+          ),
+          attempt: operationAttempt(parsed.values.attempt),
+        });
+        context.stdout(`Activated paid campaign for ${campaignId}`);
+      } else if (subcommand === "pause") {
+        await workflow.pause({
+          connectionId,
+          campaignId,
+          experimentId,
+          attempt: operationAttempt(parsed.values.attempt),
+        });
+        context.stdout(`Paused paid campaign for ${campaignId}`);
+      } else {
+        const result = await workflow.syncMetrics({
+          connectionId,
+          campaignId,
+          experimentId,
+          since: requireValue(parsed.values.since, "--since is required"),
+        });
+        context.stdout(
+          `Stored ${result.metrics.length} daily metric row${result.metrics.length === 1 ? "" : "s"}`,
+        );
+        if (result.autoPaused) {
+          context.stdout(
+            "Yogi automatically paused the campaign because a spend ceiling was reached.",
+          );
+        }
+      }
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
   throw new CliError(`Unknown ads command: ${subcommand ?? "(missing)"}`);
 };
 
@@ -848,6 +999,10 @@ const integrationsCommand = async (
         "secret-ref": { type: "string" },
         account: { type: "string" },
         "base-url": { type: "string" },
+        "api-version": { type: "string" },
+        "manager-account": { type: "string" },
+        "eu-political-ads": { type: "string" },
+        "target-country": { type: "string", multiple: true },
       },
       strict: true,
     });
@@ -862,6 +1017,46 @@ const integrationsCommand = async (
           throw new CliError("--base-url must be a valid HTTPS URL");
         }
       }
+      if (
+        integrationCategory(providerValue) === "ads" &&
+        !parsed.values.account
+      ) {
+        throw new CliError("--account is required for paid-ad connections");
+      }
+      const targetCountries = (parsed.values["target-country"] ?? []).map(
+        (country) => country.trim().toUpperCase(),
+      );
+      if (targetCountries.some((country) => !/^[A-Z]{2}$/.test(country))) {
+        throw new CliError("--target-country must use ISO 3166-1 alpha-2");
+      }
+      const political = parsed.values["eu-political-ads"];
+      if (
+        political !== undefined &&
+        political !== "contains" &&
+        political !== "does-not-contain"
+      ) {
+        throw new CliError(
+          "--eu-political-ads must be contains or does-not-contain",
+        );
+      }
+      const metadata = {
+        ...(normalizedBaseUrl ? { baseUrl: normalizedBaseUrl } : {}),
+        ...(parsed.values["api-version"]
+          ? { apiVersion: parsed.values["api-version"] }
+          : {}),
+        ...(parsed.values["manager-account"]
+          ? { managerCustomerId: parsed.values["manager-account"] }
+          : {}),
+        ...(political
+          ? {
+              euPoliticalAdvertising:
+                political === "contains"
+                  ? "CONTAINS_EU_POLITICAL_ADVERTISING"
+                  : "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+            }
+          : {}),
+        ...(targetCountries.length > 0 ? { targetCountries } : {}),
+      };
       const connection = database.createConnection({
         provider: providerValue,
         name: requireValue(parsed.values.name, "--name is required"),
@@ -872,9 +1067,7 @@ const integrationsCommand = async (
         ...(parsed.values.account
           ? { externalAccountId: parsed.values.account }
           : {}),
-        ...(normalizedBaseUrl
-          ? { metadata: { baseUrl: normalizedBaseUrl } }
-          : {}),
+        ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       });
       context.stdout(
         `Configured ${connection.provider} connection ${connection.id}`,

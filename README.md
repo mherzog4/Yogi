@@ -137,6 +137,11 @@ not stored in SQLite. The provider registry covers Smartlead, Instantly,
 EmailBison, Google Ads, LinkedIn Ads, TikTok Ads, and Meta Ads. See
 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
+Paid-ad connections can create reviewed, paused campaign shells with hard
+budget values, activate them through a separate named approval, poll daily
+metrics, and automatically pause at a configured total-budget or
+no-conversion stop-loss. See [docs/PAID_ADS.md](docs/PAID_ADS.md).
+
 ## Outbound email
 
 Yogi can import and validate prospect CSVs, manage email/domain suppressions,

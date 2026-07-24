@@ -16,6 +16,12 @@ export interface ProviderRequestOptions {
   readonly timeoutMs?: number;
 }
 
+export interface ProviderResponse<T> {
+  readonly data: T;
+  readonly headers: Headers;
+  readonly status: number;
+}
+
 const responseExcerpt = (value: string): string =>
   value.replace(/\s+/g, " ").trim().slice(0, 500);
 
@@ -57,10 +63,10 @@ export const providerBaseUrl = (
   return normalizeProviderBaseUrl(configured);
 };
 
-export const requestProviderJson = async <T>(
+export const requestProviderResponse = async <T>(
   context: ProviderContext,
   options: ProviderRequestOptions,
-): Promise<T> => {
+): Promise<ProviderResponse<T>> => {
   const method = options.method ?? "GET";
   const url = buildUrl(options.baseUrl, options.path, options.query);
   const body =
@@ -136,9 +142,19 @@ export const requestProviderJson = async <T>(
     }
     throw error;
   }
-  if (!text.trim()) return undefined as T;
+  if (!text.trim()) {
+    return {
+      data: undefined as T,
+      headers: response.headers,
+      status: response.status,
+    };
+  }
   try {
-    return JSON.parse(text) as T;
+    return {
+      data: JSON.parse(text) as T,
+      headers: response.headers,
+      status: response.status,
+    };
   } catch (error) {
     const wrapped = new ProviderHttpError(
       `${options.provider} returned invalid JSON`,
@@ -156,3 +172,8 @@ export const requestProviderJson = async <T>(
     );
   }
 };
+
+export const requestProviderJson = async <T>(
+  context: ProviderContext,
+  options: ProviderRequestOptions,
+): Promise<T> => (await requestProviderResponse<T>(context, options)).data;

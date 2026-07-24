@@ -260,6 +260,68 @@ export const readPaidExperiment = async (
   return experiment;
 };
 
+export const readStoredAdsDraftInput = async (
+  cwd: string,
+  campaignId: string,
+  experimentId: string,
+  externalAccountId: string,
+): Promise<{
+  readonly campaignId: string;
+  readonly experiment: PaidExperiment;
+  readonly creative: AdCreativeSet;
+  readonly readiness: PaidReadinessReport;
+  readonly externalAccountId: string;
+}> => {
+  const root = resolve(cwd);
+  const campaign = await ensurePaidCampaign(root, campaignId);
+  const [experiment, config] = await Promise.all([
+    readPaidExperiment(root, campaign.id, experimentId),
+    loadYogiConfig({ cwd: root }),
+  ]);
+  const paid = requirePaidConfig(config);
+  const creativePath = join(
+    paidRoot(root, campaign.id),
+    "creative",
+    `${experiment.id}.json`,
+  );
+  const creativeInput = await readFile(creativePath, "utf8");
+  const creative = JSON.parse(creativeInput) as unknown;
+  if (!isCreativeSet(creative)) {
+    throw new Error(`Invalid paid creative set at ${creativePath}`);
+  }
+  const canonicalCreative = `${JSON.stringify(creative, null, 2)}\n`;
+  const readiness = reviewPaidExperiment({
+    experiment,
+    creative,
+    creativeSha256: createHash("sha256")
+      .update(canonicalCreative)
+      .digest("hex"),
+    policy: policyFromConfig(paid, [
+      ...config.product.voice.avoid,
+      ...paid.prohibitedPhrases,
+    ]),
+  });
+  await writeJsonAtomic(creativePath, creative);
+  await writeJsonAtomic(
+    join(paidRoot(root, campaign.id), "reviews", `${experiment.id}.json`),
+    readiness,
+  );
+  if (!readiness.passed) {
+    throw new Error(
+      `Paid experiment ${experiment.id} does not pass the current launch review`,
+    );
+  }
+  const account = externalAccountId.trim();
+  if (!account) throw new Error("An external ad account ID is required");
+  return {
+    campaignId: campaign.id,
+    experiment,
+    creative,
+    readiness,
+    externalAccountId: account,
+  };
+};
+
 export const createStoredPaidCreativePrompt = async (
   cwd: string,
   campaignId: string,

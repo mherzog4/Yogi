@@ -56,6 +56,9 @@ without carrying a fork of the full engine.
   handling and distinguishes rejected mutations from unknown outcomes.
 - `src/integrations/outbound/` adapts Smartlead, Instantly, and EmailBison to
   one paused-draft, prospect-upload, activation, pause, and polling contract.
+- `src/integrations/ads/` adapts Google, LinkedIn, TikTok, and Meta to one
+  reviewed draft, separately approved activation, pause, normalized-metrics,
+  and stop-loss contract.
 - `src/sandboxes/exe.ts` adapts exe.dev's SSH API to Sandcastle's isolated
   sandbox contract.
 - `src/process.ts` is the process boundary used by the provider and replaced by
