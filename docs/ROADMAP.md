@@ -28,13 +28,15 @@ Status: merged in PR #2.
 ### 3. Outbound email
 
 Status: provider-neutral import, suppression, safety policy, and dry-run batches
-merged in PR #4. Sending adapter blocked on human review issue #3.
+merged in PR #4. Smartlead, Instantly, and EmailBison adapters now support
+paused draft publishing, sender discovery, prospect upload, explicit
+activation, pausing, and polling.
 
 - ICP and account-import schemas
 - enrichment adapters with source tracking
 - personalization and sequence QA
 - suppression lists, volume caps, and dry runs
-- one sending-provider adapter selected from the operator's actual stack
+- provider webhooks and reconciliation reporting
 
 ### 4. Content engine
 

@@ -1,4 +1,6 @@
 import { parseArgs } from "node:util";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { createCampaignPrompt, type CampaignBrief } from "./campaign.js";
 import type { ContentSourceType } from "./content/model.js";
 import {
@@ -14,6 +16,10 @@ import {
   integrationDatabasePath,
   openIntegrationDatabase,
 } from "./integrations/database.js";
+import { createIntegrationRegistry } from "./integrations/defaults.js";
+import { normalizeProviderBaseUrl } from "./integrations/http.js";
+import { IntegrationService } from "./integrations/registry.js";
+import { OutboundIntegrationWorkflow } from "./integrations/outbound/workflow.js";
 import {
   INTEGRATION_PROVIDERS,
   isIntegrationProviderId,
@@ -23,6 +29,7 @@ import {
   addSuppression,
   importProspects,
   planOutboundBatch,
+  readOutboundBatch,
 } from "./outbound/store.js";
 import type { PaidChannel, PaidPlanMode } from "./paid/model.js";
 import {
@@ -55,6 +62,13 @@ Usage:
   yogi outbound suppress <campaign-id> <email-or-domain>
     --type <email|domain> --reason <reason>
   yogi outbound plan <campaign-id> [--mode <draft|send>] [--approved]
+  yogi outbound publish <campaign-id> <batch-id> --connection <id>
+    --name <name> --subject <subject> --body-file <path> --sender <id>...
+    --approved-by <name> [--timezone <iana>] [--weekdays <0,1,2,3,4,5,6>]
+    [--start <HH:MM>] [--end <HH:MM>] [--attempt <integer>]
+  yogi outbound activate <campaign-id> --connection <id>
+    --approved-by <name> [--attempt <integer>]
+  yogi outbound pause <campaign-id> --connection <id> [--attempt <integer>]
   yogi content source add <campaign-id> <file> --title <title>
     --type <original|customer-research|external> [--url <url>] [--deidentified]
   yogi content brief create <campaign-id> --title <title> --thesis <thesis>
@@ -77,6 +91,9 @@ Usage:
   yogi integrations providers
   yogi integrations connect <provider> --name <name>
     --secret-ref <env:VARIABLE_NAME> [--account <external-id>]
+    [--base-url <https-url>]
+  yogi integrations verify <connection-id>
+  yogi integrations accounts <connection-id> [--json]
   yogi integrations list [--json]
   yogi integrations backup <destination>
 `;
@@ -98,6 +115,31 @@ class CliError extends Error {}
 const requireValue = (value: string | undefined, message: string): string => {
   if (!value) throw new CliError(message);
   return value;
+};
+
+const operationAttempt = (value: string | undefined): number => {
+  if (value === undefined) return 1;
+  const attempt = Number(value);
+  if (!Number.isSafeInteger(attempt) || attempt < 1) {
+    throw new CliError("--attempt must be a positive integer");
+  }
+  return attempt;
+};
+
+const outboundWeekdays = (value: string | undefined): readonly number[] => {
+  const weekdays = (value ?? "1,2,3,4,5")
+    .split(",")
+    .map((day) => Number(day.trim()));
+  if (
+    weekdays.length === 0 ||
+    weekdays.some((day) => !Number.isSafeInteger(day) || day < 0 || day > 6) ||
+    new Set(weekdays).size !== weekdays.length
+  ) {
+    throw new CliError(
+      "--weekdays must be unique comma-separated numbers from 0 through 6",
+    );
+  }
+  return weekdays;
 };
 
 const isChannel = (value: string): value is GtmChannel =>
@@ -320,8 +362,141 @@ const outboundCommand = async (
       context.stdout(`Exclusions: ${JSON.stringify(summary.exclusionReasons)}`);
     }
     context.stdout(
-      "No email was sent; the private batch is ready for the future provider adapter.",
+      "No email was sent; the private batch is ready for `yogi outbound publish`.",
     );
+    return;
+  }
+
+  if (subcommand === "publish") {
+    const [campaignIdValue, batchIdValue, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        connection: { type: "string" },
+        name: { type: "string" },
+        subject: { type: "string" },
+        "body-file": { type: "string" },
+        sender: { type: "string", multiple: true },
+        "approved-by": { type: "string" },
+        timezone: { type: "string", default: "America/New_York" },
+        weekdays: { type: "string", default: "1,2,3,4,5" },
+        start: { type: "string", default: "09:00" },
+        end: { type: "string", default: "17:00" },
+        attempt: { type: "string" },
+      },
+      strict: true,
+    });
+    const campaignId = requireValue(
+      campaignIdValue,
+      "A campaign ID is required",
+    );
+    const batchId = requireValue(batchIdValue, "A batch ID is required");
+    const senderAccountIds = parsed.values.sender ?? [];
+    if (senderAccountIds.length === 0) {
+      throw new CliError("At least one --sender is required");
+    }
+    const bodyPath = requireValue(
+      parsed.values["body-file"],
+      "--body-file is required",
+    );
+    const [batch, body] = await Promise.all([
+      readOutboundBatch(context.cwd, campaignId, batchId),
+      readFile(resolve(context.cwd, bodyPath), "utf8"),
+    ]);
+    const connectionId = requireValue(
+      parsed.values.connection,
+      "--connection is required",
+    );
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const workflow = new OutboundIntegrationWorkflow({
+        database,
+        registry: createIntegrationRegistry(),
+      });
+      const result = await workflow.publishDraft({
+        connectionId,
+        approvedBy: requireValue(
+          parsed.values["approved-by"],
+          "--approved-by is required",
+        ),
+        attempt: operationAttempt(parsed.values.attempt),
+        input: {
+          campaignId,
+          name: requireValue(parsed.values.name, "--name is required"),
+          batch,
+          subject: requireValue(parsed.values.subject, "--subject is required"),
+          body,
+          senderAccountIds,
+          schedule: {
+            timezone: parsed.values.timezone,
+            weekdays: outboundWeekdays(parsed.values.weekdays),
+            startHour: parsed.values.start,
+            endHour: parsed.values.end,
+          },
+        },
+      });
+      context.stdout(
+        `Published paused ${result.draft.externalStatus} campaign ${result.draft.externalCampaignId}`,
+      );
+      context.stdout(
+        `${result.prospects.accepted} prospects accepted; ${result.prospects.rejected} rejected`,
+      );
+      context.stdout(
+        "No email was sent. Run `yogi outbound activate` after reviewing the provider draft.",
+      );
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "activate" || subcommand === "pause") {
+    const [campaignIdValue, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        connection: { type: "string" },
+        "approved-by": { type: "string" },
+        attempt: { type: "string" },
+      },
+      strict: true,
+    });
+    const campaignId = requireValue(
+      campaignIdValue,
+      "A campaign ID is required",
+    );
+    const connectionId = requireValue(
+      parsed.values.connection,
+      "--connection is required",
+    );
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const workflow = new OutboundIntegrationWorkflow({
+        database,
+        registry: createIntegrationRegistry(),
+      });
+      if (subcommand === "activate") {
+        await workflow.activate({
+          connectionId,
+          campaignId,
+          approvedBy: requireValue(
+            parsed.values["approved-by"],
+            "--approved-by is required",
+          ),
+          attempt: operationAttempt(parsed.values.attempt),
+        });
+        context.stdout(`Activated provider campaign for ${campaignId}`);
+      } else {
+        await workflow.pause({
+          connectionId,
+          campaignId,
+          attempt: operationAttempt(parsed.values.attempt),
+        });
+        context.stdout(`Paused provider campaign for ${campaignId}`);
+      }
+    } finally {
+      database.close();
+    }
     return;
   }
 
@@ -672,11 +847,21 @@ const integrationsCommand = async (
         name: { type: "string" },
         "secret-ref": { type: "string" },
         account: { type: "string" },
+        "base-url": { type: "string" },
       },
       strict: true,
     });
     const database = openIntegrationDatabase(context.cwd);
     try {
+      const baseUrl = parsed.values["base-url"];
+      let normalizedBaseUrl: string | undefined;
+      if (baseUrl) {
+        try {
+          normalizedBaseUrl = normalizeProviderBaseUrl(baseUrl);
+        } catch {
+          throw new CliError("--base-url must be a valid HTTPS URL");
+        }
+      }
       const connection = database.createConnection({
         provider: providerValue,
         name: requireValue(parsed.values.name, "--name is required"),
@@ -687,6 +872,9 @@ const integrationsCommand = async (
         ...(parsed.values.account
           ? { externalAccountId: parsed.values.account }
           : {}),
+        ...(normalizedBaseUrl
+          ? { metadata: { baseUrl: normalizedBaseUrl } }
+          : {}),
       });
       context.stdout(
         `Configured ${connection.provider} connection ${connection.id}`,
@@ -694,6 +882,69 @@ const integrationsCommand = async (
       context.stdout(
         "Only the secret reference was stored; the credential was not read or persisted.",
       );
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "verify") {
+    const [connectionIdValue] = rest;
+    const connectionId = requireValue(
+      connectionIdValue,
+      "A connection ID is required",
+    );
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const service = new IntegrationService({
+        database,
+        registry: createIntegrationRegistry(),
+      });
+      await service.verifyConnection(connectionId);
+      const connection = database.getConnection(connectionId);
+      context.stdout(
+        `Verified ${connection.provider} connection ${connection.id}`,
+      );
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "accounts") {
+    const [connectionIdValue, ...optionArgs] = rest;
+    const connectionId = requireValue(
+      connectionIdValue,
+      "A connection ID is required",
+    );
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: { json: { type: "boolean", default: false } },
+      strict: true,
+    });
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const service = new IntegrationService({
+        database,
+        registry: createIntegrationRegistry(),
+      });
+      await service.discoverAccounts(connectionId);
+      const accounts = database.listAccounts(connectionId);
+      if (parsed.values.json) {
+        context.stdout(JSON.stringify(accounts, null, 2));
+      } else if (accounts.length === 0) {
+        context.stdout("No sender accounts are visible to this connection.");
+      } else {
+        for (const account of accounts) {
+          context.stdout(
+            `${account.externalId} · ${account.name}${
+              typeof account.metadata.email === "string"
+                ? ` · ${account.metadata.email}`
+                : ""
+            }`,
+          );
+        }
+      }
     } finally {
       database.close();
     }

@@ -40,6 +40,9 @@ export SMARTLEAD_API_KEY="..."
 yogi integrations connect smartlead \
   --name "Founder outbound" \
   --secret-ref env:SMARTLEAD_API_KEY
+
+yogi integrations verify <connection-id>
+yogi integrations accounts <connection-id>
 ```
 
 Yogi stores `env:SMARTLEAD_API_KEY`, not its value. Environment variable names
@@ -53,6 +56,24 @@ Current provider IDs:
 The secret resolver is injectable. Environment references are the built-in
 local implementation; a hosted control plane can provide an OS-keychain or
 cloud-secret-manager resolver without changing adapters or database rows.
+
+EmailBison supports dedicated and white-label installations. Store the
+non-secret HTTPS API origin on the connection:
+
+```bash
+yogi integrations connect emailbison \
+  --name "Agency workspace" \
+  --secret-ref env:EMAILBISON_API_KEY \
+  --base-url https://mail.example.com
+```
+
+Outbound adapters currently implement connection verification, sender
+discovery, paused campaign creation, sequence and schedule configuration,
+prospect upload, activation, pausing, and event polling. Provider API contracts
+are based on the current
+[Smartlead API](https://api.smartlead.ai/),
+[Instantly API v2](https://developer.instantly.ai/api-reference/overview), and
+[EmailBison API](https://dedi.emailbison.com/api/reference).
 
 ## Database responsibilities
 
@@ -87,6 +108,11 @@ External mutations use a prepare/approve/execute lifecycle:
 If a provider call returns but its result cannot be safely recorded, the
 operation becomes `unknown`. Yogi blocks automatic retry until synchronization
 reconciles the external outcome.
+
+Outbound publishing uses two independently recorded operations: remote draft
+creation and prospect upload. Activation uses a third operation with its own
+`outbound:activate` approval. This keeps a content or sender edit from
+implicitly authorizing a launch.
 
 ## Deployment modes
 

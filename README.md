@@ -126,6 +126,8 @@ yogi integrations connect smartlead \
   --name "Founder outbound" \
   --secret-ref env:SMARTLEAD_API_KEY
 
+yogi integrations verify <connection-id>
+yogi integrations accounts <connection-id>
 yogi integrations list
 yogi integrations status
 ```
@@ -150,8 +152,27 @@ yogi outbound plan founder-led-launch
 
 Contact-level data stays under ignored `.yogi/private/`; versioned campaign
 artifacts contain only aggregate counts, reason codes, source hashes, and the
-policy used. Send-ready batches require `--approved`, but Yogi does not yet
-send email. See [docs/OUTBOUND.md](docs/OUTBOUND.md).
+policy used. Yogi can publish paused drafts to Smartlead, Instantly, and
+EmailBison, then activate them through a separate named approval:
+
+```bash
+yogi outbound plan founder-led-launch --mode send --approved
+
+yogi outbound publish founder-led-launch <batch-id> \
+  --connection <connection-id> \
+  --name "Founder launch" \
+  --subject "A distribution idea" \
+  --body-file campaigns/founder-led-launch/sequence.md \
+  --sender <sender-account-id> \
+  --approved-by "Matthew"
+
+yogi outbound activate founder-led-launch \
+  --connection <connection-id> \
+  --approved-by "Matthew"
+```
+
+Publishing uploads the approved private batch but leaves the remote campaign
+paused. See [docs/OUTBOUND.md](docs/OUTBOUND.md).
 
 ## Content generation
 

@@ -113,6 +113,7 @@ export {
   addSuppression,
   importProspects,
   planOutboundBatch,
+  readOutboundBatch,
 } from "./outbound/store.js";
 export type {
   AddSuppressionOptions,
@@ -167,6 +168,22 @@ export {
   IntegrationService,
   operationApprovalHash,
 } from "./integrations/registry.js";
+export {
+  ExternalOutcomeUnknownError,
+  ProviderHttpError,
+} from "./integrations/errors.js";
+export { createIntegrationRegistry } from "./integrations/defaults.js";
+export {
+  EmailBisonAdapter,
+  InstantlyAdapter,
+  SmartleadAdapter,
+  createOutboundIntegrationRegistry,
+} from "./integrations/outbound/index.js";
+export { OutboundIntegrationWorkflow } from "./integrations/outbound/workflow.js";
+export type {
+  PublishOutboundDraftOptions,
+  PublishOutboundDraftResult,
+} from "./integrations/outbound/workflow.js";
 export {
   INTEGRATION_PROVIDERS,
   integrationCategory,

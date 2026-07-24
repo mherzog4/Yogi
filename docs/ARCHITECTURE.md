@@ -52,6 +52,10 @@ without carrying a fork of the full engine.
   time.
 - `src/integrations/registry.ts` binds connections to adapters and enforces
   prepare/approve/execute semantics.
+- `src/integrations/http.ts` provides redacted, timeout-aware provider HTTP
+  handling and distinguishes rejected mutations from unknown outcomes.
+- `src/integrations/outbound/` adapts Smartlead, Instantly, and EmailBison to
+  one paused-draft, prospect-upload, activation, pause, and polling contract.
 - `src/sandboxes/exe.ts` adapts exe.dev's SSH API to Sandcastle's isolated
   sandbox contract.
 - `src/process.ts` is the process boundary used by the provider and replaced by
