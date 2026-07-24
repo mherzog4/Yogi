@@ -144,3 +144,57 @@ export type {
 } from "./workspace-run.js";
 export { exe } from "./sandboxes/exe.js";
 export type { ExeOptions } from "./sandboxes/exe.js";
+export {
+  IntegrationDatabase,
+  integrationDatabasePath,
+  openIntegrationDatabase,
+  sha256Json,
+  stableJson,
+} from "./integrations/database.js";
+export type {
+  CampaignMapping,
+  OperationStatus,
+  ProviderOperation,
+} from "./integrations/database.js";
+export {
+  CompositeSecretResolver,
+  EnvironmentSecretResolver,
+  assertSecretReference,
+} from "./integrations/secrets.js";
+export type { SecretResolver } from "./integrations/secrets.js";
+export {
+  IntegrationRegistry,
+  IntegrationService,
+  operationApprovalHash,
+} from "./integrations/registry.js";
+export {
+  INTEGRATION_PROVIDERS,
+  integrationCategory,
+  isAdsAdapter,
+  isIntegrationProviderId,
+  isOutboundAdapter,
+} from "./integrations/types.js";
+export type {
+  AdsDraftInput,
+  AdsDraftResult,
+  AdsProviderAdapter,
+  AdsProviderId,
+  ConnectionStatus,
+  ConnectionVerification,
+  IntegrationCategory,
+  IntegrationProviderId,
+  NormalizedAdsMetrics,
+  NormalizedOutboundEvent,
+  NormalizedOutboundEventType,
+  OutboundDraftInput,
+  OutboundDraftResult,
+  OutboundProviderAdapter,
+  OutboundProviderId,
+  ProspectUpsertResult,
+  ProviderAccount,
+  ProviderAdapter,
+  ProviderCapabilities,
+  ProviderConnection,
+  ProviderContext,
+  ProviderDescriptor,
+} from "./integrations/types.js";

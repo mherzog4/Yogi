@@ -50,9 +50,11 @@
   },
   "dependencies": {
     "@ai-hero/sandcastle": "^0.12.0",
+    "better-sqlite3": "^12.11.1",
     "jiti": "^2.7.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.0.0",
     "prettier": "^3.6.0",
     "tsup": "^8.5.0",

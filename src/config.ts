@@ -1,6 +1,10 @@
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createJiti } from "jiti";
+import {
+  integrationDatabasePath,
+  openIntegrationDatabase,
+} from "./integrations/database.js";
 
 export const YOGI_CONFIG_FILENAME = "yogi.config.ts";
 
@@ -377,6 +381,7 @@ export interface InitWorkspaceResult {
   readonly root: string;
   readonly configPath: string;
   readonly campaignsPath: string;
+  readonly databasePath: string;
 }
 
 export const initWorkspace = async (
@@ -404,6 +409,13 @@ export const initWorkspace = async (
     encoding: "utf8",
     flag: "a",
   });
+  const database = openIntegrationDatabase(root);
+  database.close();
 
-  return { root, configPath, campaignsPath };
+  return {
+    root,
+    configPath,
+    campaignsPath,
+    databasePath: integrationDatabasePath(root),
+  };
 };
