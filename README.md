@@ -32,6 +32,38 @@ Prerequisites:
 - an exe.dev account configured for `ssh exe.dev`;
 - an agent supported by Sandcastle, such as Codex or Claude Code.
 
+## Create a workspace
+
+```bash
+npx yogi init --name "My Growth Lab"
+```
+
+This creates:
+
+```text
+yogi.config.ts
+campaigns/
+```
+
+Edit `yogi.config.ts` to capture the product description, positioning,
+audiences, offers, proof sources, and voice. Yogi validates this file before
+campaign commands run; generated `TODO` values must be replaced. See
+[examples/yogi.config.ts](examples/yogi.config.ts) for a complete example.
+
+Create and inspect a campaign:
+
+```bash
+npx yogi campaign create outbound-email \
+  --name "Founder-led launch" \
+  --goal "Book 10 qualified demos"
+
+npx yogi campaign status founder-led-launch
+npx yogi campaign prompt founder-led-launch account-research
+```
+
+Campaign records, stage status, generated artifacts, and run manifests live
+under `campaigns/<campaign-slug>/` so they can be reviewed and versioned.
+
 ## Quick start
 
 ```ts
@@ -55,9 +87,27 @@ await runGtmStage({
 });
 ```
 
+To run a stored campaign and record artifact provenance:
+
+```ts
+import { codex } from "@ai-hero/sandcastle";
+import { exe, runWorkspaceStage } from "@mherzog4/yogi";
+
+await runWorkspaceStage({
+  campaignId: "founder-led-launch",
+  stage: "account-research",
+  agent: codex("gpt-5.4"),
+  sandbox: exe(),
+});
+```
+
 Yogi creates a short-lived exe.dev VM by default, synchronizes the repository
 into it, runs the selected agent, and brings the resulting commits back. Set
 `persist: true` on `exe()` when you deliberately want to keep the VM.
+
+Each workspace run records its agent, sandbox, timestamps, branch, commits, and
+SHA-256 hashes for required deliverables. A run is marked failed when the agent
+does not produce every required artifact.
 
 ## Built-in playbooks
 

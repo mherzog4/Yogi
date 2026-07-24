@@ -1,0 +1,26 @@
+import type { YogiConfig } from "@mherzog4/yogi";
+
+export default {
+  schemaVersion: 1,
+  workspace: {
+    name: "Founder Growth Lab",
+  },
+  product: {
+    name: "Launch Map",
+    description: "A planning assistant for focused SaaS launches.",
+    positioning:
+      "Turn a rough product idea into a credible launch plan in one afternoon.",
+    audiences: ["Bootstrapped B2B SaaS founders preparing a product launch"],
+    offers: ["Build a focused launch plan in one afternoon"],
+    proof: [
+      {
+        claim: "Used by five design partners",
+        source: "Internal customer research notes",
+      },
+    ],
+    voice: {
+      traits: ["clear", "specific", "credible", "human"],
+      avoid: ["hype", "unsupported claims", "generic AI phrasing"],
+    },
+  },
+} satisfies YogiConfig;
