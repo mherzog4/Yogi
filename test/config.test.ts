@@ -85,6 +85,15 @@ describe("Yogi configuration", () => {
           editorialMinimumScore: 101,
           prohibitedPhrases: "guaranteed",
         },
+        paidAds: {
+          currency: "usd",
+          maxDailyBudgetMinor: 200,
+          maxExperimentBudgetMinor: 100,
+          maxSpendWithoutConversionMinor: 150,
+          minimumCreativeVariants: 1,
+          allowedLandingPageHosts: ["HTTPS://Bad.example/path"],
+          prohibitedPhrases: "guaranteed results",
+        },
       }),
     ).toThrow(ConfigValidationError);
 
@@ -111,6 +120,15 @@ describe("Yogi configuration", () => {
           editorialMinimumScore: 101,
           prohibitedPhrases: "guaranteed",
         },
+        paidAds: {
+          currency: "usd",
+          maxDailyBudgetMinor: 200,
+          maxExperimentBudgetMinor: 100,
+          maxSpendWithoutConversionMinor: 150,
+          minimumCreativeVariants: 1,
+          allowedLandingPageHosts: ["HTTPS://Bad.example/path"],
+          prohibitedPhrases: "guaranteed results",
+        },
       });
     } catch (error) {
       expect(error).toBeInstanceOf(ConfigValidationError);
@@ -125,6 +143,12 @@ describe("Yogi configuration", () => {
           "outbound.requirePersonalization must be a boolean",
           "content.editorialMinimumScore must be an integer from 0 to 100",
           "content.prohibitedPhrases must be an array of strings",
+          "paidAds.currency must be a three-letter uppercase code",
+          "paidAds.minimumCreativeVariants must be an integer of at least 2",
+          "paidAds.allowedLandingPageHosts[0] must be a lowercase hostname without a scheme or path",
+          "paidAds.prohibitedPhrases must be an array of strings",
+          "paidAds.maxDailyBudgetMinor must not exceed maxExperimentBudgetMinor",
+          "paidAds.maxSpendWithoutConversionMinor must not exceed maxExperimentBudgetMinor",
         ]),
       );
     }

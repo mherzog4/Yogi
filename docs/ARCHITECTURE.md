@@ -40,6 +40,10 @@ without carrying a fork of the full engine.
   plans, and deterministic editorial policy.
 - `src/content/store.ts` versions approved source copies, prompts, plans, and
   review reports inside a content campaign.
+- `src/paid/model.ts` defines experiments, creative sets, safety policy,
+  readiness review, and launch-ready plans.
+- `src/paid/store.ts` persists paid artifacts and rechecks canonical creative
+  against current workspace ceilings before launch planning.
 - `src/sandboxes/exe.ts` adapts exe.dev's SSH API to Sandcastle's isolated
   sandbox contract.
 - `src/process.ts` is the process boundary used by the provider and replaced by
@@ -144,3 +148,21 @@ Editorial review is deterministic policy, not semantic fact verification. It
 checks citation-marker coverage, minimum format length, the exact CTA,
 unresolved placeholders, and prohibited phrases. Publishing remains unavailable
 until the operator selects destinations and their approval policy.
+
+## Paid acquisition boundary
+
+Paid experiments store currency and budgets as integer minor units. Workspace
+configuration defines maximum daily spend, total experiment spend, spend
+without a conversion, approved landing-page hosts, minimum creative variants,
+and prohibited claims. Each experiment declares budgets and a stop-loss within
+that policy.
+
+Creative review copies valid JSON to the canonical campaign path and records
+its SHA-256 hash. A launch-ready plan requires explicit approval and reruns
+readiness against the canonical creative and current configuration, preventing
+an old passing report from surviving later creative or policy changes.
+
+Both draft and launch-ready plans record
+`externalActionPerformed: false`. Provider adapters, account credentials, ad
+creation, activation, pausing, and spend remain outside the core until issue #7
+is resolved.

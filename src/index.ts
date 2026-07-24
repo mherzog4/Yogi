@@ -25,10 +25,38 @@ export type {
   LoadConfigOptions,
   ContentDefaults,
   OutboundDefaults,
+  PaidAdsDefaults,
   ProofPoint,
   VoiceGuide,
   YogiConfig,
 } from "./config.js";
+export {
+  createPaidCreativePrompt,
+  createPaidExperimentPlan,
+  isPaidChannel,
+  reviewPaidExperiment,
+} from "./paid/model.js";
+export type {
+  AdCreativeSet,
+  AdCreativeVariant,
+  PaidChannel,
+  PaidExperiment,
+  PaidExperimentPlan,
+  PaidPlanMode,
+  PaidReadinessIssue,
+  PaidReadinessIssueCode,
+  PaidReadinessReport,
+  PaidSafetyPolicy,
+  PaidTrackingPlan,
+} from "./paid/model.js";
+export {
+  createStoredPaidCreativePrompt,
+  createStoredPaidExperiment,
+  planStoredPaidExperiment,
+  readPaidExperiment,
+  reviewStoredPaidExperiment,
+} from "./paid/store.js";
+export type { CreatePaidExperimentOptions } from "./paid/store.js";
 export {
   contentFormatGuidance,
   createContentPrompt,
