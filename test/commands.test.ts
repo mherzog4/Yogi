@@ -167,4 +167,124 @@ bob@blocked.com,Blocked,Research,Relevant launch
     expect(output.join("\n")).not.toContain("alice@example.com");
     expect(errors.join("\n")).toContain("require approved: true");
   });
+
+  it("runs a grounded content workflow through editorial review", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "yogi-cli-test-"));
+    temporaryDirectories.push(cwd);
+    const output: string[] = [];
+    const errors: string[] = [];
+    const context = {
+      cwd,
+      stdout: (value: string) => output.push(value),
+      stderr: (value: string) => errors.push(value),
+    };
+
+    await writeValidConfig(cwd);
+    await runCli(
+      [
+        "campaign",
+        "create",
+        "content",
+        "--name",
+        "Founder Content",
+        "--goal",
+        "Earn qualified subscribers",
+      ],
+      context,
+    );
+    const sourcePath = join(cwd, "source.md");
+    await writeFile(
+      sourcePath,
+      "# Source\n\nEvidence-based launch advice earns trust.",
+      "utf8",
+    );
+    expect(
+      await runCli(
+        [
+          "content",
+          "source",
+          "add",
+          "founder-content",
+          sourcePath,
+          "--title",
+          "Launch research",
+          "--type",
+          "original",
+        ],
+        context,
+      ),
+    ).toBe(0);
+    expect(
+      await runCli(
+        [
+          "content",
+          "brief",
+          "create",
+          "founder-content",
+          "--title",
+          "Credible launches",
+          "--thesis",
+          "Specific evidence earns trust",
+          "--format",
+          "linkedin-post",
+          "--cta",
+          "Read the launch guide",
+          "--source",
+          "launch-research",
+        ],
+        context,
+      ),
+    ).toBe(0);
+    expect(
+      await runCli(
+        ["content", "prompt", "founder-content", "credible-launches"],
+        context,
+      ),
+    ).toBe(0);
+    expect(
+      await runCli(
+        [
+          "content",
+          "repurpose",
+          "founder-content",
+          "credible-launches",
+          "--format",
+          "newsletter",
+          "--format",
+          "x-thread",
+        ],
+        context,
+      ),
+    ).toBe(0);
+
+    const draftPath = join(cwd, "draft.md");
+    const body = Array.from(
+      { length: 24 },
+      () => "Specific evidence helps focused teams make responsible decisions.",
+    ).join(" ");
+    await writeFile(
+      draftPath,
+      `# Credible launches\n\n${body} [[source:launch-research]]\n\nRead the launch guide`,
+      "utf8",
+    );
+    expect(
+      await runCli(
+        [
+          "content",
+          "review",
+          "founder-content",
+          "credible-launches",
+          draftPath,
+        ],
+        context,
+      ),
+    ).toBe(0);
+
+    expect(errors).toEqual([]);
+    expect(output.join("\n")).toContain("Added source launch-research");
+    expect(output.join("\n")).toContain("Created content brief");
+    expect(output.join("\n")).toContain("[[source:launch-research]]");
+    expect(output.join("\n")).toContain("Created repurpose plan with 2 assets");
+    expect(output.join("\n")).toContain("Editorial review passed: 100/80");
+  });
 });

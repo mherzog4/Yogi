@@ -23,11 +23,43 @@ export type {
   InitWorkspaceOptions,
   InitWorkspaceResult,
   LoadConfigOptions,
+  ContentDefaults,
   OutboundDefaults,
   ProofPoint,
   VoiceGuide,
   YogiConfig,
 } from "./config.js";
+export {
+  contentFormatGuidance,
+  createContentPrompt,
+  createRepurposePlan,
+  reviewEditorialDraft,
+} from "./content/model.js";
+export type {
+  ContentBrief,
+  ContentFormat,
+  ContentSource,
+  ContentSourceType,
+  EditorialIssue,
+  EditorialReport,
+  EditorialSeverity,
+  RepurposeAsset,
+  RepurposePlan,
+} from "./content/model.js";
+export {
+  addContentSource,
+  createStoredContentBrief,
+  createStoredContentPrompt,
+  createStoredRepurposePlan,
+  isContentFormat,
+  listContentSources,
+  readContentBrief,
+  reviewStoredContentDraft,
+} from "./content/store.js";
+export type {
+  AddContentSourceOptions,
+  CreateContentBriefOptions,
+} from "./content/store.js";
 export {
   buildOutboundBatch,
   DEFAULT_OUTBOUND_POLICY,

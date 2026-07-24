@@ -29,4 +29,8 @@ export default {
     requirePersonalization: true,
     allowRoleBasedAddresses: false,
   },
+  content: {
+    editorialMinimumScore: 80,
+    prohibitedPhrases: ["guaranteed", "best-in-class", "game-changing"],
+  },
 } satisfies YogiConfig;

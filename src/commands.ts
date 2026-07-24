@@ -1,5 +1,14 @@
 import { parseArgs } from "node:util";
 import { createCampaignPrompt, type CampaignBrief } from "./campaign.js";
+import type { ContentSourceType } from "./content/model.js";
+import {
+  addContentSource,
+  createStoredContentBrief,
+  createStoredContentPrompt,
+  createStoredRepurposePlan,
+  isContentFormat,
+  reviewStoredContentDraft,
+} from "./content/store.js";
 import { initWorkspace } from "./config.js";
 import type { OutboundBatchMode } from "./outbound/model.js";
 import {
@@ -31,6 +40,13 @@ Usage:
   yogi outbound suppress <campaign-id> <email-or-domain>
     --type <email|domain> --reason <reason>
   yogi outbound plan <campaign-id> [--mode <draft|send>] [--approved]
+  yogi content source add <campaign-id> <file> --title <title>
+    --type <original|customer-research|external> [--url <url>] [--deidentified]
+  yogi content brief create <campaign-id> --title <title> --thesis <thesis>
+    --format <format> --cta <call-to-action> --source <source-id>...
+  yogi content prompt <campaign-id> <brief-id>
+  yogi content repurpose <campaign-id> <brief-id> --format <format>...
+  yogi content review <campaign-id> <brief-id> <draft-file>
 `;
 
 export interface CliContext {
@@ -280,6 +296,139 @@ const outboundCommand = async (
   throw new CliError(`Unknown outbound command: ${subcommand ?? "(missing)"}`);
 };
 
+const requireContentFormat = (value: string | undefined) => {
+  if (!value || !isContentFormat(value)) {
+    throw new CliError(
+      "--format must be article, newsletter, linkedin-post, x-thread, or video-script",
+    );
+  }
+  return value;
+};
+
+const contentCommand = async (
+  args: readonly string[],
+  context: CliContext,
+): Promise<void> => {
+  const [subcommand, ...rest] = args;
+
+  if (subcommand === "source" && rest[0] === "add") {
+    const [, campaignId, filePath, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        title: { type: "string" },
+        type: { type: "string" },
+        url: { type: "string" },
+        deidentified: { type: "boolean", default: false },
+      },
+      strict: true,
+    });
+    const type = parsed.values.type;
+    if (
+      type !== "original" &&
+      type !== "customer-research" &&
+      type !== "external"
+    ) {
+      throw new CliError(
+        "--type must be original, customer-research, or external",
+      );
+    }
+    const source = await addContentSource({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      filePath: requireValue(filePath, "A source file is required"),
+      title: requireValue(parsed.values.title, "--title is required"),
+      type: type as ContentSourceType,
+      ...(parsed.values.url ? { url: parsed.values.url } : {}),
+      acknowledgeDeidentified: parsed.values.deidentified,
+    });
+    context.stdout(`Added source ${source.id} at ${source.repositoryPath}`);
+    return;
+  }
+
+  if (subcommand === "brief" && rest[0] === "create") {
+    const [, campaignId, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        title: { type: "string" },
+        thesis: { type: "string" },
+        format: { type: "string" },
+        cta: { type: "string" },
+        source: { type: "string", multiple: true },
+      },
+      strict: true,
+    });
+    const brief = await createStoredContentBrief({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      title: requireValue(parsed.values.title, "--title is required"),
+      thesis: requireValue(parsed.values.thesis, "--thesis is required"),
+      format: requireContentFormat(parsed.values.format),
+      callToAction: requireValue(parsed.values.cta, "--cta is required"),
+      sourceIds: parsed.values.source ?? [],
+    });
+    context.stdout(`Created content brief ${brief.id}`);
+    return;
+  }
+
+  if (subcommand === "prompt") {
+    const [campaignId, briefId] = rest;
+    context.stdout(
+      await createStoredContentPrompt(
+        context.cwd,
+        requireValue(campaignId, "A campaign ID is required"),
+        requireValue(briefId, "A brief ID is required"),
+      ),
+    );
+    return;
+  }
+
+  if (subcommand === "repurpose") {
+    const [campaignId, briefId, ...optionArgs] = rest;
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        format: { type: "string", multiple: true },
+      },
+      strict: true,
+    });
+    const formats = (parsed.values.format ?? []).map(requireContentFormat);
+    const plan = await createStoredRepurposePlan({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      briefId: requireValue(briefId, "A brief ID is required"),
+      formats,
+    });
+    context.stdout(
+      `Created repurpose plan with ${plan.assets.length} asset${plan.assets.length === 1 ? "" : "s"}`,
+    );
+    return;
+  }
+
+  if (subcommand === "review") {
+    const [campaignId, briefId, draftPath] = rest;
+    const report = await reviewStoredContentDraft({
+      cwd: context.cwd,
+      campaignId: requireValue(campaignId, "A campaign ID is required"),
+      briefId: requireValue(briefId, "A brief ID is required"),
+      draftPath: requireValue(draftPath, "A draft file is required"),
+    });
+    context.stdout(
+      `Editorial review ${report.passed ? "passed" : "failed"}: ${report.score}/${report.minimumScore}`,
+    );
+    for (const issue of report.issues) {
+      context.stdout(`  ${issue.severity}: ${issue.message}`);
+    }
+    if (!report.passed) {
+      throw new Error("Draft did not pass the editorial gate");
+    }
+    return;
+  }
+
+  throw new CliError(`Unknown content command: ${subcommand ?? "(missing)"}`);
+};
+
 export const runCli = async (
   args: readonly string[],
   overrides: Partial<CliContext> = {},
@@ -330,6 +479,11 @@ export const runCli = async (
 
     if (command === "outbound") {
       await outboundCommand(rest, context);
+      return 0;
+    }
+
+    if (command === "content") {
+      await contentCommand(rest, context);
       return 0;
     }
 
