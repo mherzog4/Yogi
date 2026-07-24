@@ -75,6 +75,55 @@ are based on the current
 [Instantly API v2](https://developer.instantly.ai/api-reference/overview), and
 [EmailBison API](https://dedi.emailbison.com/api/reference).
 
+Paid-ad connections require an explicit account ID. LinkedIn, TikTok, and Meta
+use a bearer access token as the referenced environment value:
+
+```bash
+export LINKEDIN_ADS_ACCESS_TOKEN="..."
+
+yogi integrations connect linkedin-ads \
+  --name "Founder LinkedIn" \
+  --secret-ref env:LINKEDIN_ADS_ACCESS_TOKEN \
+  --account 123456789
+```
+
+Google Ads requires both an OAuth access token and developer token in one
+secret JSON value:
+
+```bash
+export GOOGLE_ADS_CREDENTIALS='{"accessToken":"...","developerToken":"..."}'
+
+yogi integrations connect google-ads \
+  --name "Founder search" \
+  --secret-ref env:GOOGLE_ADS_CREDENTIALS \
+  --account 1234567890 \
+  --manager-account 9876543210 \
+  --eu-political-ads does-not-contain
+```
+
+The EU political-ad declaration is required before Google campaign creation;
+Yogi never guesses it. Meta requires one or more explicit initial targeting
+countries:
+
+```bash
+yogi integrations connect meta-ads \
+  --name "Founder Meta" \
+  --secret-ref env:META_ADS_ACCESS_TOKEN \
+  --account 123456789 \
+  --target-country US \
+  --target-country CA
+```
+
+Use `--api-version` to pin a different supported provider version during a
+controlled upgrade. Current defaults are Google Ads `v25`, LinkedIn `202606`,
+TikTok `v1.3`, and Meta Graph `v25.0`.
+
+Paid adapters verify account identity and currency, create a paused budgeted
+campaign shell, activate or pause through the operation ledger, and normalize
+daily spend, impression, click, and conversion metrics. Creative and
+provider-specific targeting remain explicit review work; adapters do not infer
+audiences from prose.
+
 ## Database responsibilities
 
 The schema stores:
@@ -113,6 +162,12 @@ Outbound publishing uses two independently recorded operations: remote draft
 creation and prospect upload. Activation uses a third operation with its own
 `outbound:activate` approval. This keeps a content or sender edit from
 implicitly authorizing a launch.
+
+Paid publishing similarly separates `ads:publish-draft` from `ads:activate`.
+The draft hash binds the experiment, creative SHA-256, readiness policy,
+account, and budgets while ignoring the review timestamp. Each paid experiment
+gets an independent provider mapping even when several experiments belong to
+one Yogi campaign.
 
 ## Deployment modes
 

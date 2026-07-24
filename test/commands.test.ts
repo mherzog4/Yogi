@@ -460,4 +460,62 @@ bob@blocked.com,Blocked,Research,Relevant launch
     expect(output.join("\n")).not.toContain("private-value");
     expect(await readFile(backupPath)).not.toHaveLength(0);
   });
+
+  it("requires paid account identity and stores non-secret provider settings", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "yogi-cli-test-"));
+    temporaryDirectories.push(cwd);
+    const output: string[] = [];
+    const errors: string[] = [];
+    const context = {
+      cwd,
+      stdout: (value: string) => output.push(value),
+      stderr: (value: string) => errors.push(value),
+    };
+
+    expect(
+      await runCli(
+        [
+          "integrations",
+          "connect",
+          "google-ads",
+          "--name",
+          "Search",
+          "--secret-ref",
+          "env:GOOGLE_ADS_CREDENTIALS",
+        ],
+        context,
+      ),
+    ).toBe(1);
+    expect(errors.join("\n")).toContain(
+      "--account is required for paid-ad connections",
+    );
+
+    expect(
+      await runCli(
+        [
+          "integrations",
+          "connect",
+          "meta-ads",
+          "--name",
+          "Meta",
+          "--secret-ref",
+          "env:META_ADS_ACCESS_TOKEN",
+          "--account",
+          "123",
+          "--target-country",
+          "us",
+          "--target-country",
+          "ca",
+          "--api-version",
+          "v25.0",
+        ],
+        context,
+      ),
+    ).toBe(0);
+    expect(await runCli(["integrations", "list", "--json"], context)).toBe(0);
+    expect(output.join("\n")).toContain('"targetCountries": [');
+    expect(output.join("\n")).toContain('"US"');
+    expect(output.join("\n")).toContain('"apiVersion": "v25.0"');
+    expect(output.join("\n")).not.toContain("access-token");
+  });
 });

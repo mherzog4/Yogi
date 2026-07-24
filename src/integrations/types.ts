@@ -1,4 +1,8 @@
-import type { AdCreativeSet, PaidExperiment } from "../paid/model.js";
+import type {
+  AdCreativeSet,
+  PaidExperiment,
+  PaidReadinessReport,
+} from "../paid/model.js";
 import type { OutboundBatch, Prospect } from "../outbound/model.js";
 
 export type OutboundProviderId = "smartlead" | "instantly" | "emailbison";
@@ -175,6 +179,7 @@ export interface AdsDraftInput {
   readonly campaignId: string;
   readonly experiment: PaidExperiment;
   readonly creative: AdCreativeSet;
+  readonly readiness: PaidReadinessReport;
   readonly externalAccountId: string;
 }
 
@@ -206,11 +211,13 @@ export interface AdsProviderAdapter extends ProviderAdapter {
     context: ProviderContext,
     externalCampaignId: string,
     idempotencyKey: string,
+    metadata?: Readonly<Record<string, unknown>>,
   ): Promise<void>;
   pause(
     context: ProviderContext,
     externalCampaignId: string,
     idempotencyKey: string,
+    metadata?: Readonly<Record<string, unknown>>,
   ): Promise<void>;
   syncMetrics(
     context: ProviderContext,
