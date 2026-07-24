@@ -7,7 +7,7 @@ reviewable engineering workflow.
 
 ### 1. Orchestration foundation
 
-Status: implemented in draft PR #1.
+Status: merged in PR #1.
 
 - exe.dev isolated sandbox provider
 - typed campaign briefs and playbooks
@@ -17,7 +17,7 @@ Status: implemented in draft PR #1.
 
 ### 2. Campaign workspace
 
-Status: implemented on the stacked campaign-workspace branch.
+Status: merged in PR #2.
 
 - `yogi init` project scaffolding
 - validated `yogi.config.ts`
@@ -28,8 +28,7 @@ Status: implemented on the stacked campaign-workspace branch.
 ### 3. Outbound email
 
 Status: provider-neutral import, suppression, safety policy, and dry-run batches
-implemented on the outbound-core branch. Sending adapter blocked on human
-review issue #3.
+merged in PR #4. Sending adapter blocked on human review issue #3.
 
 - ICP and account-import schemas
 - enrichment adapters with source tracking
@@ -38,6 +37,10 @@ review issue #3.
 - one sending-provider adapter selected from the operator's actual stack
 
 ### 4. Content engine
+
+Status: grounded source, brief, repurposing, and editorial-review core
+implemented on the content-engine branch. Publishing adapters blocked on human
+review issue #5.
 
 - source library and reusable brand context
 - research-to-pillar workflow

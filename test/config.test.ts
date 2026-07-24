@@ -81,6 +81,10 @@ describe("Yogi configuration", () => {
           requirePersonalization: "yes",
           allowRoleBasedAddresses: false,
         },
+        content: {
+          editorialMinimumScore: 101,
+          prohibitedPhrases: "guaranteed",
+        },
       }),
     ).toThrow(ConfigValidationError);
 
@@ -103,6 +107,10 @@ describe("Yogi configuration", () => {
           requirePersonalization: "yes",
           allowRoleBasedAddresses: false,
         },
+        content: {
+          editorialMinimumScore: 101,
+          prohibitedPhrases: "guaranteed",
+        },
       });
     } catch (error) {
       expect(error).toBeInstanceOf(ConfigValidationError);
@@ -115,6 +123,8 @@ describe("Yogi configuration", () => {
           "outbound.dailyProspectLimit must be a positive integer",
           "outbound.maxPerDomain must be a positive integer",
           "outbound.requirePersonalization must be a boolean",
+          "content.editorialMinimumScore must be an integer from 0 to 100",
+          "content.prohibitedPhrases must be an array of strings",
         ]),
       );
     }

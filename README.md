@@ -10,8 +10,10 @@ isolated environments. It builds on
 - repository-native artifacts so research and creative work can be reviewed as
   ordinary diffs.
 
-Yogi is in active development. The first release establishes the orchestration
-foundation; channel integrations will follow as separate, reviewable changes.
+Yogi is in active development. Its orchestration foundation, durable campaign
+workspaces, outbound planning core, and grounded content workflow are available;
+external sending, publishing, and ad-spend integrations remain deliberately
+disabled.
 
 ## Try the current source
 
@@ -126,6 +128,41 @@ Contact-level data stays under ignored `.yogi/private/`; versioned campaign
 artifacts contain only aggregate counts, reason codes, source hashes, and the
 policy used. Send-ready batches require `--approved`, but Yogi does not yet
 send email. See [docs/OUTBOUND.md](docs/OUTBOUND.md).
+
+## Content generation
+
+Yogi turns approved source material into grounded briefs, agent prompts,
+repurpose plans, and editorial review reports:
+
+```bash
+yogi campaign create content \
+  --name "Founder launch lessons" \
+  --goal "Earn 100 qualified subscribers"
+
+yogi content source add founder-launch-lessons notes.md \
+  --title "Founder research" \
+  --type customer-research \
+  --deidentified
+
+yogi content brief create founder-launch-lessons \
+  --title "Why credible launches compound" \
+  --thesis "Specific evidence earns more trust than manufactured urgency" \
+  --format article \
+  --cta "Read the launch guide" \
+  --source founder-research
+
+yogi content prompt founder-launch-lessons why-credible-launches-compound
+yogi content repurpose founder-launch-lessons why-credible-launches-compound \
+  --format newsletter \
+  --format linkedin-post
+yogi content review founder-launch-lessons why-credible-launches-compound \
+  campaigns/founder-launch-lessons/content/drafts/why-credible-launches-compound.md
+```
+
+Prompts require `[[source:<id>]]` markers next to sourced claims. Editorial
+review checks source coverage, format length, the exact call to action,
+placeholders, and configured prohibited phrases. Yogi does not publish content.
+See [docs/CONTENT.md](docs/CONTENT.md).
 
 ## Built-in playbooks
 

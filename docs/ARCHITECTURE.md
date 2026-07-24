@@ -36,6 +36,10 @@ without carrying a fork of the full engine.
 - `src/outbound/model.ts` applies deterministic suppression and batch policy.
 - `src/outbound/store.ts` separates private contact records from versioned
   aggregate reports.
+- `src/content/model.ts` defines grounded briefs, format guidance, repurpose
+  plans, and deterministic editorial policy.
+- `src/content/store.ts` versions approved source copies, prompts, plans, and
+  review reports inside a content campaign.
 - `src/sandboxes/exe.ts` adapts exe.dev's SSH API to Sandcastle's isolated
   sandbox contract.
 - `src/process.ts` is the process boundary used by the provider and replaced by
@@ -123,3 +127,20 @@ or protected domain cannot re-enter through a different campaign.
 Draft and send-ready are planning modes, not transport operations. A send-ready
 batch requires explicit approval, while actual sending remains unavailable
 until an adapter and mailbox policy are selected.
+
+## Content grounding boundary
+
+Content sources are copied into the campaign tree and recorded in an index with
+their SHA-256 hash. A brief selects source IDs; its generated prompt tells the
+agent to read those files and place `[[source:<id>]]` beside supported claims.
+This makes source use visible in an ordinary diff without embedding source text
+inside the prompt.
+
+Customer-research imports require the operator to acknowledge that the source
+has been de-identified. Because content sources are versioned, private customer
+records and restricted material must not be imported.
+
+Editorial review is deterministic policy, not semantic fact verification. It
+checks citation-marker coverage, minimum format length, the exact CTA,
+unresolved placeholders, and prohibited phrases. Publishing remains unavailable
+until the operator selects destinations and their approval policy.

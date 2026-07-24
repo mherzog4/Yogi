@@ -21,6 +21,11 @@ export interface OutboundDefaults {
   readonly allowRoleBasedAddresses: boolean;
 }
 
+export interface ContentDefaults {
+  readonly editorialMinimumScore: number;
+  readonly prohibitedPhrases: readonly string[];
+}
+
 export interface YogiConfig {
   readonly schemaVersion: 1;
   readonly workspace: {
@@ -36,6 +41,7 @@ export interface YogiConfig {
     readonly voice: VoiceGuide;
   };
   readonly outbound?: OutboundDefaults;
+  readonly content?: ContentDefaults;
 }
 
 export class ConfigValidationError extends Error {
@@ -175,6 +181,29 @@ export const validateYogiConfig = (input: unknown): YogiConfig => {
     }
   }
 
+  const content = input.content;
+  if (content !== undefined) {
+    if (!isRecord(content)) {
+      issues.push("content must be an object");
+    } else {
+      const minimumScore = content.editorialMinimumScore;
+      if (
+        !Number.isSafeInteger(minimumScore) ||
+        Number(minimumScore) < 0 ||
+        Number(minimumScore) > 100
+      ) {
+        issues.push(
+          "content.editorialMinimumScore must be an integer from 0 to 100",
+        );
+      }
+      validateStringArray(
+        content.prohibitedPhrases,
+        "content.prohibitedPhrases",
+        issues,
+      );
+    }
+  }
+
   if (issues.length > 0) throw new ConfigValidationError(issues);
   return input as unknown as YogiConfig;
 };
@@ -233,6 +262,10 @@ export default {
     maxPerDomain: 2,
     requirePersonalization: true,
     allowRoleBasedAddresses: false,
+  },
+  content: {
+    editorialMinimumScore: 80,
+    prohibitedPhrases: ["guaranteed", "best-in-class", "game-changing"],
   },
 } satisfies YogiConfig;
 `;
