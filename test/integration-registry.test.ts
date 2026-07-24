@@ -11,6 +11,7 @@ import {
   IntegrationService,
   operationApprovalHash,
 } from "../src/integrations/registry.js";
+import { ExternalOutcomeUnknownError } from "../src/integrations/errors.js";
 import type { SecretResolver } from "../src/integrations/secrets.js";
 import type { ProviderAdapter } from "../src/integrations/types.js";
 
@@ -167,6 +168,33 @@ describe("integration registry and service", () => {
       }),
     ).rejects.toThrow("requires reconciliation");
     expect(uncertainExecute).toHaveBeenCalledOnce();
+
+    const providerUncertain = service.prepareOperation({
+      connectionId: connection.id,
+      campaignId: "founder-outbound",
+      action: "activate",
+      idempotencyKey: "founder-outbound:activate:provider-uncertain",
+      request: { externalCampaignId: "campaign-2" },
+    });
+    await expect(
+      service.executeOperation({
+        operation: providerUncertain,
+        execute: async () => {
+          throw new ExternalOutcomeUnknownError("timed out after send", {
+            externalId: "campaign-2",
+          });
+        },
+      }),
+    ).rejects.toThrow("timed out after send");
+    expect(
+      database.getOperationByKey(
+        connection.id,
+        providerUncertain.idempotencyKey,
+      ),
+    ).toMatchObject({
+      status: "unknown",
+      externalId: "campaign-2",
+    });
     database.close();
   });
 

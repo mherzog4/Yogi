@@ -9,6 +9,7 @@ import type {
   ProviderContext,
   IntegrationProviderId,
 } from "./types.js";
+import { ExternalOutcomeUnknownError } from "./errors.js";
 
 export class IntegrationRegistry {
   readonly #adapters = new Map<IntegrationProviderId, ProviderAdapter>();
@@ -213,7 +214,11 @@ export class IntegrationService {
     } catch (error) {
       this.#database.completeOperation({
         id: current.id,
-        status: "failed",
+        status:
+          error instanceof ExternalOutcomeUnknownError ? "unknown" : "failed",
+        ...(error instanceof ExternalOutcomeUnknownError && error.externalId
+          ? { externalId: error.externalId }
+          : {}),
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;

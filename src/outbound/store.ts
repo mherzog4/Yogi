@@ -222,6 +222,29 @@ const readProspects = async (
   return store.prospects;
 };
 
+export const readOutboundBatch = async (
+  cwdInput: string,
+  campaignIdInput: string,
+  batchId: string,
+): Promise<OutboundBatch> => {
+  const cwd = resolve(cwdInput);
+  const campaignId = await ensureOutboundCampaign(cwd, campaignIdInput);
+  const path = join(privateRoot(cwd, campaignId), "batches", `${batchId}.json`);
+  const batch = JSON.parse(await readFile(path, "utf8")) as OutboundBatch;
+  if (
+    batch.schemaVersion !== 1 ||
+    batch.id !== batchId ||
+    (batch.mode !== "draft" && batch.mode !== "send") ||
+    typeof batch.approved !== "boolean" ||
+    !Array.isArray(batch.selected) ||
+    !batch.selected.every(isProspect) ||
+    !Array.isArray(batch.excluded)
+  ) {
+    throw new Error(`Invalid private outbound batch at ${path}`);
+  }
+  return batch;
+};
+
 const readSuppressions = async (
   cwd: string,
 ): Promise<readonly Suppression[]> => {

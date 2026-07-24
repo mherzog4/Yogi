@@ -592,6 +592,23 @@ export class IntegrationDatabase {
     };
   }
 
+  findCampaignMapping(
+    connectionId: string,
+    campaignId: string,
+  ): CampaignMapping | undefined {
+    try {
+      return this.getCampaignMapping(connectionId, campaignId);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("No provider mapping")
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
   beginOperation(input: {
     readonly connectionId: string;
     readonly campaignId?: string;

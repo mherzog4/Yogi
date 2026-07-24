@@ -1,10 +1,8 @@
 # Outbound email operations
 
-Yogi's outbound core prepares safe, provider-neutral prospect batches. It does
-not send email.
-
-The sending-provider decision is tracked in
-[issue #3](https://github.com/mherzog4/Yogi/issues/3).
+Yogi prepares safe, provider-neutral prospect batches and can publish them as
+paused campaigns in Smartlead, Instantly, or EmailBison. Activation is always a
+separate approved operation.
 
 ## Data boundary
 
@@ -81,7 +79,74 @@ yogi outbound plan founder-launch --mode send --approved
 ```
 
 Even a send-ready plan does not send email. It freezes the approved private
-batch for the future provider adapter.
+batch for publishing to a paused provider campaign.
+
+## Connect an email provider
+
+Store the credential in the exe.dev VM environment or your local shell. Yogi
+stores only the environment-variable reference:
+
+```bash
+export INSTANTLY_API_KEY="..."
+
+yogi integrations connect instantly \
+  --name "Founder outbound" \
+  --secret-ref env:INSTANTLY_API_KEY
+
+yogi integrations verify <connection-id>
+yogi integrations accounts <connection-id>
+```
+
+Use `smartlead`, `instantly`, or `emailbison` as the provider ID. A dedicated or
+white-label EmailBison installation can set its HTTPS origin:
+
+```bash
+yogi integrations connect emailbison \
+  --name "Agency workspace" \
+  --secret-ref env:EMAILBISON_API_KEY \
+  --base-url https://mail.example.com
+```
+
+## Publish, review, and activate
+
+First publish the approved batch as a paused remote campaign:
+
+```bash
+yogi outbound publish founder-launch <batch-id> \
+  --connection <connection-id> \
+  --name "Founder launch" \
+  --subject "A distribution idea" \
+  --body-file campaigns/founder-launch/sequence.md \
+  --sender <sender-account-id> \
+  --approved-by "Matthew" \
+  --timezone America/New_York \
+  --weekdays 1,2,3,4,5 \
+  --start 09:00 \
+  --end 17:00
+```
+
+Repeat `--sender` to rotate multiple mailboxes. Publishing configures the
+sequence and schedule, uploads the selected prospects, and records the provider
+campaign mapping in SQLite. It does not activate sending.
+
+Review the rendered sequence, sender health, schedule, suppressions, and
+provider-side lead count in the provider UI. Then activate:
+
+```bash
+yogi outbound activate founder-launch \
+  --connection <connection-id> \
+  --approved-by "Matthew"
+```
+
+Pause is explicit but does not need an approval because it reduces sending:
+
+```bash
+yogi outbound pause founder-launch --connection <connection-id>
+```
+
+Smartlead sender IDs and EmailBison sender IDs are numeric. Instantly uses the
+sender email address as its account ID. The account-discovery command prints
+the exact value to pass.
 
 ## Exclusion order
 
@@ -95,9 +160,10 @@ Yogi applies exclusions deterministically:
 6. per-domain limit;
 7. daily prospect limit.
 
-Provider adapters must apply their own mailbox limits, unsubscribe handling,
-and provider-side suppression before sending. Yogi's approval flag is not a
-substitute for applicable law, provider policy, or operator review.
+Provider adapters preserve provider-side duplicate and suppression checks, use
+the Yogi daily prospect cap, and stop on replies where supported. Yogi's
+approval flag is not a substitute for applicable law, provider policy,
+deliverability review, or operator judgment.
 
 Suppressions are workspace-global: an email or domain suppressed while working
 on one campaign is excluded from every campaign in the same workspace.
