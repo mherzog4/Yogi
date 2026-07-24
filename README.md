@@ -111,6 +111,30 @@ Each workspace run records its agent, sandbox, timestamps, branch, commits, and
 SHA-256 hashes for required deliverables. A run is marked failed when the agent
 does not produce every required artifact.
 
+## Provider connections and SQLite
+
+Every workspace has a private SQLite integration ledger at
+`.yogi/private/yogi.sqlite`. It stores provider connections, external IDs,
+idempotent operations, approval records, sync cursors, webhook receipts, and
+normalized metrics. Campaign intent and aggregate reports remain reviewable in
+Git.
+
+Configure connections with secret references:
+
+```bash
+yogi integrations connect smartlead \
+  --name "Founder outbound" \
+  --secret-ref env:SMARTLEAD_API_KEY
+
+yogi integrations list
+yogi integrations status
+```
+
+Credentials are resolved only when a provider operation runs; their values are
+not stored in SQLite. The provider registry covers Smartlead, Instantly,
+EmailBison, Google Ads, LinkedIn Ads, TikTok Ads, and Meta Ads. See
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+
 ## Outbound email
 
 Yogi can import and validate prospect CSVs, manage email/domain suppressions,

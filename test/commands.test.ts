@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -416,5 +416,48 @@ bob@blocked.com,Blocked,Research,Relevant launch
     expect(output.join("\n")).toContain("Paid launch review passed");
     expect(output.join("\n")).toContain("no external action was performed");
     expect(errors.join("\n")).toContain("approved: true");
+  });
+
+  it("initializes private integration storage and records secret references", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "yogi-cli-test-"));
+    temporaryDirectories.push(cwd);
+    const output: string[] = [];
+    const errors: string[] = [];
+    const context = {
+      cwd,
+      stdout: (value: string) => output.push(value),
+      stderr: (value: string) => errors.push(value),
+    };
+
+    expect(await runCli(["integrations", "init"], context)).toBe(0);
+    expect(
+      await runCli(
+        [
+          "integrations",
+          "connect",
+          "smartlead",
+          "--name",
+          "Founder outbound",
+          "--secret-ref",
+          "env:SMARTLEAD_API_KEY",
+          "--account",
+          "workspace-1",
+        ],
+        context,
+      ),
+    ).toBe(0);
+    expect(await runCli(["integrations", "list"], context)).toBe(0);
+    expect(await runCli(["integrations", "status"], context)).toBe(0);
+    const backupPath = join(cwd, "backups", "yogi.sqlite");
+    expect(await runCli(["integrations", "backup", backupPath], context)).toBe(
+      0,
+    );
+
+    expect(errors).toEqual([]);
+    expect(output.join("\n")).toContain("schema 1, wal");
+    expect(output.join("\n")).toContain("smartlead");
+    expect(output.join("\n")).toContain("Only the secret reference was stored");
+    expect(output.join("\n")).not.toContain("private-value");
+    expect(await readFile(backupPath)).not.toHaveLength(0);
   });
 });

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -40,6 +40,8 @@ describe("Yogi configuration", () => {
     );
     expect(source).toContain('name: "Founder Growth"');
     expect(source).toContain("satisfies YogiConfig");
+    await expect(access(initialized.databasePath)).resolves.toBeUndefined();
+    expect(initialized.databasePath).toContain(".yogi/private/yogi.sqlite");
 
     await writeValidConfig(cwd);
     const config = await loadYogiConfig({ cwd });

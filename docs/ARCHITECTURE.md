@@ -44,6 +44,14 @@ without carrying a fork of the full engine.
   readiness review, and launch-ready plans.
 - `src/paid/store.ts` persists paid artifacts and rechecks canonical creative
   against current workspace ceilings before launch planning.
+- `src/integrations/database.ts` owns the private SQLite ledger, migrations,
+  backups, idempotency, approvals, cursors, webhook receipts, and metrics.
+- `src/integrations/types.ts` defines capability-aware outbound and ads adapter
+  contracts.
+- `src/integrations/secrets.ts` resolves opaque credential references just in
+  time.
+- `src/integrations/registry.ts` binds connections to adapters and enforces
+  prepare/approve/execute semantics.
 - `src/sandboxes/exe.ts` adapts exe.dev's SSH API to Sandcastle's isolated
   sandbox contract.
 - `src/process.ts` is the process boundary used by the provider and replaced by
@@ -166,3 +174,20 @@ Both draft and launch-ready plans record
 `externalActionPerformed: false`. Provider adapters, account credentials, ad
 creation, activation, pausing, and spend remain outside the core until issue #7
 is resolved.
+
+## Provider-state boundary
+
+Git remains the source of truth for campaign intent. Mutable operational state
+lives in `.yogi/private/yogi.sqlite`, which is ignored by Git and protected
+with restrictive file permissions. Database rows contain secret references,
+never credentials.
+
+Provider mutations are idempotent and approval-bound. A canonical request hash,
+connection, action, campaign, and idempotency key identify the operation.
+Activation-capable calls require a valid approval for that exact operation.
+Successful operations replay their sanitized recorded result instead of
+repeating an external mutation.
+
+SQLite is appropriate for a local CLI or one persistent exe.dev control VM.
+Ephemeral agent VMs should not receive the database. A multi-replica hosted
+deployment should implement the same storage contract with PostgreSQL.

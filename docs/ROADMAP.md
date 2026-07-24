@@ -61,6 +61,10 @@ adapter blocked on human review issue #7.
 
 ### 6. Operations
 
+Status: private SQLite ledger, connection registry, secret references,
+idempotent operation records, approvals, webhook deduplication, sync cursors,
+metrics, and online backups implemented on the integration-core branch.
+
 - scheduled exe.dev runs
 - notifications and human approval handoffs
 - campaign scorecards

@@ -10,6 +10,14 @@ import {
   reviewStoredContentDraft,
 } from "./content/store.js";
 import { initWorkspace } from "./config.js";
+import {
+  integrationDatabasePath,
+  openIntegrationDatabase,
+} from "./integrations/database.js";
+import {
+  INTEGRATION_PROVIDERS,
+  isIntegrationProviderId,
+} from "./integrations/types.js";
 import type { OutboundBatchMode } from "./outbound/model.js";
 import {
   addSuppression,
@@ -64,6 +72,13 @@ Usage:
   yogi ads review <campaign-id> <experiment-id> <creative-json>
   yogi ads plan <campaign-id> <experiment-id>
     [--mode <draft|launch>] [--approved]
+  yogi integrations init
+  yogi integrations status
+  yogi integrations providers
+  yogi integrations connect <provider> --name <name>
+    --secret-ref <env:VARIABLE_NAME> [--account <external-id>]
+  yogi integrations list [--json]
+  yogi integrations backup <destination>
 `;
 
 export interface CliContext {
@@ -605,6 +620,133 @@ const adsCommand = async (
   throw new CliError(`Unknown ads command: ${subcommand ?? "(missing)"}`);
 };
 
+const integrationsCommand = async (
+  args: readonly string[],
+  context: CliContext,
+): Promise<void> => {
+  const [subcommand, ...rest] = args;
+
+  if (subcommand === "providers") {
+    for (const provider of INTEGRATION_PROVIDERS) {
+      context.stdout(provider);
+    }
+    return;
+  }
+
+  if (subcommand === "init") {
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      context.stdout(
+        `Initialized integration database at ${database.path} (schema ${database.schemaVersion()}, ${database.journalMode()})`,
+      );
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "status") {
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      context.stdout(`Database: ${integrationDatabasePath(context.cwd)}`);
+      context.stdout(`Schema: ${database.schemaVersion()}`);
+      context.stdout(`Journal: ${database.journalMode()}`);
+      context.stdout(`Integrity: ${database.integrityCheck()}`);
+      context.stdout(`Connections: ${database.listConnections().length}`);
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "connect") {
+    const [providerValue, ...optionArgs] = rest;
+    if (!isIntegrationProviderId(providerValue)) {
+      throw new CliError(
+        `Unknown provider: ${providerValue ?? "(missing)"}. Use \`yogi integrations providers\`.`,
+      );
+    }
+    const parsed = parseArgs({
+      args: optionArgs,
+      options: {
+        name: { type: "string" },
+        "secret-ref": { type: "string" },
+        account: { type: "string" },
+      },
+      strict: true,
+    });
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const connection = database.createConnection({
+        provider: providerValue,
+        name: requireValue(parsed.values.name, "--name is required"),
+        secretRef: requireValue(
+          parsed.values["secret-ref"],
+          "--secret-ref is required",
+        ),
+        ...(parsed.values.account
+          ? { externalAccountId: parsed.values.account }
+          : {}),
+      });
+      context.stdout(
+        `Configured ${connection.provider} connection ${connection.id}`,
+      );
+      context.stdout(
+        "Only the secret reference was stored; the credential was not read or persisted.",
+      );
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "list") {
+    const parsed = parseArgs({
+      args: rest,
+      options: { json: { type: "boolean", default: false } },
+      strict: true,
+    });
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const connections = database.listConnections();
+      if (parsed.values.json) {
+        context.stdout(JSON.stringify(connections, null, 2));
+      } else if (connections.length === 0) {
+        context.stdout("No provider connections configured.");
+      } else {
+        for (const connection of connections) {
+          context.stdout(
+            `${connection.id} · ${connection.provider} · ${connection.name} · ${connection.status}`,
+          );
+        }
+      }
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  if (subcommand === "backup") {
+    const [destination] = rest;
+    const target = requireValue(
+      destination,
+      "A backup destination is required",
+    );
+    const database = openIntegrationDatabase(context.cwd);
+    try {
+      const pages = await database.backup(target);
+      context.stdout(`Backed up ${pages} pages to ${target}`);
+    } finally {
+      database.close();
+    }
+    return;
+  }
+
+  throw new CliError(
+    `Unknown integrations command: ${subcommand ?? "(missing)"}`,
+  );
+};
+
 export const runCli = async (
   args: readonly string[],
   overrides: Partial<CliContext> = {},
@@ -665,6 +807,11 @@ export const runCli = async (
 
     if (command === "ads") {
       await adsCommand(rest, context);
+      return 0;
+    }
+
+    if (command === "integrations") {
+      await integrationsCommand(rest, context);
       return 0;
     }
 
